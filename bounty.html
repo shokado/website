@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Bug bounty · Shokado</title>
+	<meta name="description" content="Shokado and Bento are safe on untrusted source and bytecode. Any input that crashes them, hangs them, or slips past an out of memory report is worth up to $500 USD.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Bug bounty
+
+No `.bento` file and no `.sbc` image can crash Shokado or Bento, hang them, or run them out of memory without the failure being reported and handled gracefully. We say both are production ready and safe on untrusted input. If you can find an input that proves otherwise, it's worth up to $500 USD.
+
+## What counts
+
+Issues are inputs that cause one of these:
+
+Crash
+: The process dies with a segmentation fault or another fatal signal from a stack overflow, an integer division by zero, a read or write out of bounds, or a null pointer dereference.
+
+Denial of service
+: Running time that grows quadratically or exponentially with the size of the input, or a loop that never ends. Everything in Shokado and Bento is bounded.
+
+Out of memory
+: Failed allocations that crash the compiler or go unreported. Everything that can run out of memory is handled and reported to the host as `SKD_STATUS_OOM`.
+
+Anything within the spirit of these rules
+: Inputs that break the safety of Shokado or Bento on untrusted input in any other way.
+
+::: note
+Inputs refused for going over a limit are the library working as designed.
+:::
+
+## In scope
+
+- Any source given to `bento-c`, the language server, or the library.
+- Any bytecode given to a tool or loaded through the library.
+- The current source, built with the default limits in `skd_config.h` and `bto_config.h` and run on a thread with at least 1 MiB of stack.
+
+## Out of scope
+
+- Misuse of the C API, such as a bad pointer or a pass run on a module that was never verified.
+- Host callbacks that break the contract of an allocator, a file system, or a reporter.
+- The JSON protocol of the language server and the command line arguments of the tools.
+- Output that a driver or another compiler rejects or mishandles.
+- Builds with changed limits or changed source.
+
+::: note
+Wrong code is outside the bounty but still a bug worth reporting.
+:::
+
+## Reporting
+
+There's no private channel and no embargo. Reports are public because we're sure enough of Shokado and Bento to accept every one of them in the open. Report issues on [GitHub Issues](ISSUES_URL) and include:
+
+- the input that sets it off,
+- the tool and its flags, or the library calls,
+- the platform, the compiler, and the build flags,
+- what happened: the signal or the sanitizer report, the time it took, or the allocation that went unreported.
+
+Each issue pays up to $500 USD. Several inputs that hit the same bug count as one issue and pay once to whoever reported it first on the public issue tracker.
+
+## Safeguards
+
+- Everything that grows with the input has an upper limit documented in `skd_config.h` or `bto_config.h`. Pathological inputs stop at a limit with an error.
+- Algorithms are chosen to stay clear of quadratic and exponential behaviour. Where growth is still possible, it's capped.
+- Every stage is fuzzed with libFuzzer. The fuzzers and the test suite run under AddressSanitizer and UndefinedBehaviorSanitizer.
+- Tests fail every allocation of a full build in turn and check that each failure is reported once and nothing leaks.
+</script>
+</body>
+</html>

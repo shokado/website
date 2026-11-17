@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Shokado Shader Compiler Infrastructure</title>
+	<meta name="description" content="Shokado: shader compiler infrastructure for building shaders and shader tools. An IR, an optimizer, and code generators for SPIR-V, DXIL, AIR, and GLSL in one C library with no dependencies.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+
+<main class="home">
+<div class="wrap">
+
+<div class="hero">
+	<div class="pitch">
+	<h1>Shader compiler infrastructure for building shaders and shader tools.</h1>
+	<p class="lede">Shokado is an IR and a set of tools that lower it directly to what your graphics API requires. The whole infrastructure is one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
+	</div>
+	<svg class="still" viewBox="0 -24 370 320" aria-hidden="true">
+		<defs>
+			<linearGradient id="hashi" gradientUnits="userSpaceOnUse" x1="0" x2="165">
+				<stop offset="0" stop-color="#d8b585"/>
+				<stop offset="0.7" stop-color="#c49a68"/>
+				<stop offset="0.705" stop-color="#4a1f12"/>
+				<stop offset="1" stop-color="#2b120b"/>
+			</linearGradient>
+			<filter id="lift" x="-20%" y="-20%" width="140%" height="160%">
+				<feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#000" flood-opacity="0.55"/>
+			</filter>
+		</defs>
+		<rect x="30" y="118" width="250" height="172" rx="6" fill="#0e0b09" stroke="#c2401d" stroke-width="6"/>
+		<rect x="41" y="129" width="132" height="150" rx="2" fill="#ede6d8"/>
+		<rect x="181" y="129" width="88" height="71" rx="2" fill="#ebbb4a"/>
+		<rect x="181" y="208" width="88" height="71" rx="2" fill="#e8603f"/>
+		<g transform="translate(209 104) rotate(-33)" filter="url(#lift)">
+			<rect x="2" y="-12" width="34" height="24" rx="2" fill="#ebbb4a"/>
+			<polygon points="0,-15 165,-26 165,-17 0,-12" fill="url(#hashi)"/>
+			<polygon points="0,12 165,17 165,26 0,15" fill="url(#hashi)"/>
+		</g>
+	</svg>
+</div>
+
+<section class="band" id="bento">
+	<div class="pitch">
+		<p class="kicker">The shading language</p>
+		<h2>Bento</h2>
+		<p>Bento is the shading language built on Shokado. Barriers, subgroups, uniformity, and uber shaders are concepts it understands rather than thinly typed intrinsics and macros bolted onto C.</p>
+		<p class="go"><a href="bento.html">Meet Bento</a> <a href="language.html">Language tour</a> <a href="start.html">Getting started</a></p>
+	</div>
+	<figure class="code"><pre data-lang="bento">import std;
+
+struct Pixel {
+	[[location(0)]] uv: f32x2,
+}
+
+struct Color {
+	[[color(0)]] rgba: f32x4,
+}
+
+[[stage(.Fragment)]]
+fn main(px: Pixel) -&gt; Color {
+	let corner = px.uv.x * px.uv.y;
+	let glow = std::smoothstep(0.0, 1.0, corner);
+	return { f32x4 { px.uv, glow, 1.0 } };
+}</pre></figure>
+</section>
+
+<div class="section-head" id="targets">
+	<h2>Write once, run anywhere</h2>
+	<p>Shokado IR lowers to SPIR-V, DXIL, AIR, and GLSL with no other compiler in between. <a href="targets.html">Targets</a></p>
+</div>
+<img class="graphic" src="targets.svg" width="1520" height="680" alt="Bento, or your own language, node graph, or material graph, builds Shokado IR. Shokado IR is lowered to SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5 to 4.6, DXIL for DirectX 12, AIR for Metal 3 and 4, and GLSL for OpenGL 4.5 to 4.6 and OpenGL ES 3.1 to 3.2 as a fallback for OpenGL drivers without SPIR-V support.">
+
+<div class="section-head" id="infrastructure">
+	<h2>Infrastructure</h2>
+	<p>An IR and a set of language agnostic tools that work on it. Bento is a small client on top of all that, much like clang is the C and C++ frontend for LLVM. <a href="toolchain.html">Tools</a>, <a href="ir.html">IR and bytecode</a>, <a href="library.html">Library</a></p>
+</div>
+<div class="tray">
+	<div class="cell">
+		<h3>Structured SSA</h3>
+		<p>Blocks belong to <code>if</code> and loop instructions rather than to a control flow graph. IR can be built, edited, printed, and verified from other programs.</p>
+	</div>
+	<div class="cell">
+		<h3>Bytecode</h3>
+		<p>Modules can be linked at build time or at run time, left incomplete, and mixed with IR from any source.</p>
+	</div>
+	<div class="cell">
+		<h3>Tools</h3>
+		<p>Linker, optimizer, code generator, disassembler, validator, and stripper, for modules from any frontend.</p>
+	</div>
+	<div class="cell wide">
+		<h3>Optimizer</h3>
+		<p>Inlining, mem2reg, scalar replacement of aggregates, loop inversion, CSE, and comprehensive rule-driven algebraic simplifications. Competitive with <a href="https://github.com/KhronosGroup/SPIRV-Tools">spirv-opt</a> and with the highest optimization level of DXC.</p>
+	</div>
+	<div class="cell">
+		<h3>Library</h3>
+		<p>One C header. Memory, files, and diagnostics are provided by the host through callbacks.</p>
+	</div>
+	<div class="cell full">
+		<h3>Untrusted input</h3>
+		<p>No source or bytecode can crash the library, hang it, or run it out of memory without the failure being reported and handled. An input that proves otherwise is worth up to $500 USD under the <a href="bounty.html">bug bounty</a>.</p>
+	</div>
+</div>
+
+<div class="section-head" id="rationale">
+	<h2>Rationale</h2>
+</div>
+<div class="tray">
+	<div class="cell full">
+		<p class="quote">&ldquo;The shader situation in Vulkan and Direct3D 12 is somewhat dire and this is an attempt at trying to address it.&rdquo;</p>
+		<p>The <a href="why.html">rationale</a> is about the lessons from past mistakes, why Shokado is not a transpiler, and why the library comes first. Status is on the <a href="roadmap.html">roadmap</a>.</p>
+	</div>
+</div>
+
+</div>
+</main>
+
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Roadmap · Shokado</title>
+	<meta name="description" content="How much of the design of Shokado and Bento is in the code today and what is planned next.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Roadmap
+
+## Working
+
+### Bento
+
+- Scalars, vectors, matrices, arrays, tables keyed by enums and domains, structs, enums, domains, aliases, and tuple results
+- Strict typing with untyped literals, swizzles, `.Name` selectors, and `...` spreads
+- `const`, `const if`, and `const for` inside functions
+- Overloading, methods, and generic functions and structs that are checked once and exported through bytecode
+- References with a memory space, workgroup memory, and the overlap check
+- Function types and the `const fn` intrinsics `std::size_of`, `std::align_of`, and `std::count_of`
+- Storage images, textures, samplers, sampling, depth comparisons, and size queries
+- [Bindless](bindless.html) in Vulkan, Direct3D 12, and OpenGL
+- Vertex, fragment, and compute entry points
+- Uniformity qualifiers on `if` and `for`, with derivatives checked through calls and across modules
+- The built-in contexts read through `with` clauses
+- Modules, imports, exports, and `///` doc comments
+
+### Shokado
+
+- All the tools, and the library as a single header or a static library
+- IR with the builder, editor, printer, and verifier
+- Bytecode that is safe on untrusted input and links with unresolved imports left for later
+- The optimizer and its table of algebraic rules
+- SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5, GLSL 4.50 and GLSL ES 3.10, and the C target
+- AIR for Metal compute, vertex, and fragment entry points from Metal 3, written as a `.metallib` without LLVM
+- DXIL from Shader Model 6.9, written as a container that passes the validator without DXC
+- GPU tests that draw and compare every frame in OpenGL, Vulkan, and Direct3D 12
+- The language server and packages for VS Code and Sublime Text
+- The [bug bounty](bounty.html)
+
+## Next
+
+- Uniformity analysis that proves the scope of every value and region, the `dispatch`, `partgroup`, and `quadgroup` qualifiers, and written qualifiers checked unless marked `[[assume]]`
+- Automatic barriers
+- Context parameters with `context` declarations and `with` blocks
+- Interfaces as generic constraints
+- Ranges as values, `in`, and `for` over the keys of a domain or enum
+- Bindless handles as one number per target
+
+## Later
+
+- [Uber shaders](uber.html)
+- `const fn` bodies, atomic types, and a layout attribute for structs
+- Bindless in Metal
+- Simdgroup operations
+- Task and mesh stages
+- Ray tracing
+- The rest of AIR and DXIL
+- LICM, sinking, unrolling, and loop fusion and fission
+- Bytecode that stays stable across versions and portable across machines
+- Completion and warnings in the language server
+</script>
+</body>
+</html>

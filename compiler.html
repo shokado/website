@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Compiler and editors · Bento</title>
+	<meta name="description" content="The Bento compiler and language server: diagnostics with notes, fixes, and hints, and editor support for VS Code and Sublime Text.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Compiler and editors
+
+bento-c
+: Compiles source to bytecode and prints the syntax tree, the IR, or generated code on request.
+bento-lsp
+: Language server for diagnostics, hover, definitions, and outlines.
+
+Linking, optimizing, and generating code are done by the [tools](toolchain.html) of Shokado.
+
+## Diagnostics
+
+`bento-c` reports every error in a file in one run rather than stopping at the first. Errors read the way rustc and Swift print them: the problem first, a `note` when it needs explaining, and a `help` with the fix when there is one. Unknown names hint at the closest match or at the qualified name of an import.
+
+```bento glow.bento
+import std;
+
+fn third[T: Floating](v: [vector; const N]T) -> T {
+	return v.z;
+}
+
+fn brighten(x: &thread f32) {
+	*x *= 2.0;
+}
+
+struct Frame {
+	[[storage(0)]] pixels: [array; _]f32,
+}
+
+[[stage(.Compute), workgroup_size(64)]]
+fn glow(cs: Frame) with (t: Thread) {
+	let level = std::sqrt(cs.pixels[t.global.x]);
+	let tint = std::normalise(f32x3 { level, level, 1.0 });
+	brighten(level);
+	brighten(&cs.pixels[t.global.x]);
+}
+```
+
+```text bento-c glow.bento
+glow.bento:4:11: error: 'z' is out of range when 'N' is 2
+glow.bento:4:11: help: add 'requires N >= 3'
+glow.bento:4:11: help: or wrap it in 'const if N >= 3'
+glow.bento:18:13: error: unknown function 'std::normalise'; did you mean 'std::normalize'?
+glow.bento:19:11: error: expected '&thread f32' but found 'f32'
+glow.bento:19:11: help: add '&' to refer to it
+glow.bento:20:11: error: expected '&thread f32' but found '&storage f32'
+glow.bento:20:11: note: a reference to storage memory cannot be used as one to thread memory
+glow.bento:20:11: help: copy the value into a 'let' and refer to that
+```
+
+Generics are checked once and the first error points at `third` itself rather than at a call.
+
+## Editor support
+
+VS Code and Sublime Text share one TextMate grammar and can both run `bento-lsp`:
+
+| Editor | Package | Language server |
+| --- | --- | --- |
+| VS Code | `editors/vscode` | through the extension |
+| Sublime Text | `editors/sublime` | through the LSP package |
+
+`bento-lsp` publishes the diagnostics of `bento-c` on every change and supports hover with types and `///` doc comments, go to definition, and the document outline. The README of each package describes the setup.
+</script>
+</body>
+</html>

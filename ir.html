@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>IR and Bytecode · Shokado</title>
+	<meta name="description" content="Shokado IR is SSA with structured control flow and can be built, edited, verified, linked while incomplete, and shipped as bytecode that is safe to load from anywhere.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# IR and bytecode
+
+## Structured control flow
+
+Control flow in Shokado IR is structured, the way SPIR-V and GLSL require it to be. LLVM IR is a control flow graph of blocks joined by branches, but Shokado IR has no control flow graph and no goto. The then and else blocks of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `kill`. Where LLVM finds loops by computing dominators, Shokado finds them by walking a tree.
+
+Values aren't passed through jumps. They're merged by PHIs instead. A PHI after an `if` has one operand per arm, a PHI at the top of a loop has the entry value followed by one operand per `continue` in edge order, and a PHI after a loop has one per `break`.
+
+```bento sum.bento
+module demo;
+
+export fn sum(n: i32, scale: f32) -> f32 {
+	let total = 0.0;
+	for let i = 0; i < n; i += 1 {
+		if i % 2 == 0 {
+			continue;
+		}
+		total += scale * 2.0;
+	}
+	return total;
+}
+```
+
+```ir bento-c --opt sum.bento -o - | skd-strip - | skd-dis - -o -
+module demo
+
+fn @sum(i32, f32) -> f32 export
+%bb0(%r1, %r2):
+	%r26 = ilt $0, %r1
+	if %r26, %bb1, %bb13
+%bb1:
+	loop %bb2
+%bb2:
+	%r22 = phi $0, %r14, %r20
+	%r24 = phi $0.0, %r24, %r18
+	%r31 = ishr %r22, $31
+	%r32 = band %r31, $1
+	%r33 = iadd %r22, %r32
+	%r34 = band %r33, $-2
+	%r11 = isub %r22, %r34
+	%r12 = ieq %r11, $0
+	if %r12, %bb3, %bb7
+%bb3:
+	%r14 = iadd %r22, $1
+	%r27 = ilt %r14, %r1
+	if %r27, %bb4, %bb5
+%bb4:
+	yield %bb6
+%bb5:
+	break %bb12, $0
+%bb6:
+	continue %bb2, $0
+%bb7:
+	yield %bb8
+%bb8:
+	%r17 = fmul %r2, $2.0
+	%r18 = fadd %r17, %r24
+	%r20 = iadd %r22, $1
+	%r28 = ilt %r20, %r1
+	if %r28, %bb9, %bb10
+%bb9:
+	yield %bb11
+%bb10:
+	break %bb12, $1
+%bb11:
+	continue %bb2, $1
+%bb12:
+	%r30 = phi %r24, %r18
+	yield %bb14
+%bb13:
+	yield %bb14
+%bb14:
+	%r25 = phi %r30, $0.0
+	return %r25
+```
+
+Printed IR flattens the nesting out under labels. `%r` is a value, `%bb` a block, `$` a literal, and `@` a function or global. Uniformity qualifiers are printed after the opcode, as in `loop.thread`, for every scope except `simdgroup`.
+
+## Instructions and types
+
+The [IR reference](ir-reference.html) lists every instruction, type, and printed form. Arithmetic is only split into signed, unsigned, and float where the bits differ: there's one `iadd` for both kinds of integer, but `idiv` and `udiv` are separate. Builtins such as `min` and `abs` are opcodes that fold like any other instruction, not opaque calls. In SPIR-V every constant is an instruction of its own. In Shokado IR literals are operands and are in scope everywhere in a function.
+
+Every opcode is pure, convergent, or impure. Passes are written against those effects rather than against opcode names. Convergent instructions, such as derivatives, barriers, and simdgroup operations, are never moved into or out of control flow.
+
+The IR has the same types as Bento. Fast-math flags are set once per block for the instructions directly in it. LLVM IR repeats them on every instruction. Uniformity is recorded on every `if` and loop. Functions record the scope of uniformity and the stages they may be called from.
+
+Generic functions are checked once and stored in bytecode as templates. Unlike C++ templates, their instances never fail to compile. Calls are instantiated by substitution when the module is built for local generics and in the linker for imported ones.
+
+## Building IR without source
+
+You don't need Bento source to make IR. Any program can build it through the public builder, much as frontends build LLVM IR through IRBuilder. Builder failures are sticky and the status is checked once at the end rather than after every call. `skd-llc --target=bto` writes a module out as C that builds it again:
+
+```c sum.c
+	f = skd_ir_function_begin(b, SKD_STRING("sum"), T[2], SKD_IR_LINKAGE_EXPORT);
+	f->file = 0;
+	r1 = skd_ir_value(1);
+	r2 = skd_ir_value(2);
+	b->location = 80;
+	r26 = skd_ir_build_binary(b, SKD_IR_ILT, T[3], skd_ir_build_i32(b, 0), r1);
+	{
+		const SKDUint32 n0 = skd_ir_build_if(b, r26, SKD_IR_SCOPE_SIMDGROUP);
+		skd_ir_block_begin(b, n0 + 0);
+		{
+			const SKDUint32 n1 = skd_ir_build_loop(b, SKD_IR_SCOPE_SIMDGROUP);
+			skd_ir_block_begin(b, n1 + 0);
+			r22 = skd_ir_build_ternary(b, SKD_IR_PHI, T[1], skd_ir_build_i32(b, 0), SKD_IR_NONE, SKD_IR_NONE);
+			r24 = skd_ir_build_ternary(b, SKD_IR_PHI, T[0], skd_ir_build_f32(b, 0.0), SKD_IR_NONE, SKD_IR_NONE);
+			b->location = 109;
+			r31 = skd_ir_build_binary(b, SKD_IR_ISHR, T[1], r22, skd_ir_build_i32(b, 31));
+			r32 = skd_ir_build_binary(b, SKD_IR_BAND, T[1], r31, skd_ir_build_i32(b, 1));
+			r33 = skd_ir_build_binary(b, SKD_IR_IADD, T[1], r22, r32);
+			r34 = skd_ir_build_binary(b, SKD_IR_BAND, T[1], r33, skd_ir_build_i32(b, -2));
+			r11 = skd_ir_build_binary(b, SKD_IR_ISUB, T[1], r22, r34);
+			r12 = skd_ir_build_binary(b, SKD_IR_IEQ, T[3], r11, skd_ir_build_i32(b, 0));
+			...
+```
+
+## Verification
+
+Bytecode is verified before any tool uses it. The passes and generators depend on what the verifier guarantees: operands are defined before they're used, control flow and types are well formed, every call is allowed by the stages and uniformity of its callee, and every entry point's bindings are allowed by its stage.
+
+IR images are used in place with nothing copied. Loading an IR image must be verified to prevent out of bounds and type confusion. Every offset, alignment, and length is checked before it's trusted. Objects have to follow one another exactly and can never overlap.
+
+```text skd-val
+oldver.sbc: error: not an IR image from this build of Shokado
+cut.sbc: error: the IR image is shorter than its header says
+ptr.sbc: error: the IR image is damaged: a pointer points outside it or into another object, or blocks nest too deep
+```
+
+## Bytecode
+
+Modules are saved to `.sbc` images as one flat block of offsets that loads back with a single read. Unlike LLVM bitcode, there's nothing to decode on the way in. The same module always saves to the same bytes.
+
+Most compilers throw their IR away once code is generated. Shokado bytecode is a delivery format instead. Imports a link leaves unresolved stay imports for a later link. Shaders compiled from source, IR built by other programs, and modules compiled offline can all be linked together. `skd-strip` removes the file table and every location without changing the generated code.
+
+```ir skd-dis partial.sbc
+import bits
+
+fn @tint(location 0 Flat u32) -> Out [color 0] export Fragment
+%bb0(%r1):
+	%r2 = call @noise::hash, %r1
+	%r5 = band %r2, $255
+	%r6 = convert %r5
+	%r7 = fdiv %r6, $255.0
+	%r12 = construct %r7, %r7, %r7, $1.0
+	%r13 = construct %r12
+	return %r13
+
+fn @noise::hash(u32) -> u32 internal
+%bb0(%r1):
+	%r4 = imul %r1, $747796405
+	%r5 = iadd %r4, $2891336453
+	%r6 = call @bits::fold, %r5
+	return %r6
+
+fn @bits::fold(u32) -> u32 import
+```
+
+This shader was linked with `noise` but not with `bits`. `@noise::hash` is now an internal function and `@bits::fold` is still an import waiting for a later link.
+</script>
+</body>
+</html>

@@ -1,0 +1,1117 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Language Tour · Bento</title>
+	<meta name="description" content="Tour of the Bento shading language.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Language tour
+
+## Example
+
+In Bento the entry point of your shader receives inputs as a single struct parameter and it returns output as another struct. The members of these structs need to be marked up with attributes that describe the bindings.
+
+```bento hello.bento
+import std;
+
+struct Pixel {
+	[[location(0)]] uv: f32x2,
+}
+
+struct Color {
+	[[color(0)]] rgba: f32x4,
+}
+
+[[stage(.Fragment)]]
+fn main(px: Pixel) -> Color {
+	let corner = px.uv.x * px.uv.y;
+	let glow = std::smoothstep(0.0, 1.0, corner);
+	return { f32x4 { px.uv, glow, 1.0 } };
+}
+```
+
+Structs with bindings can only appear as the parameter or result of an entry point.
+
+## Types
+
+### Scalars, vectors, and matrices
+
+| Kind | Written | Notes |
+| --- | --- | --- |
+| Booleans | `b8 b16 b32` | 8, 16, or 32 bits wide in memory |
+| Integers | `i8 i16 i32 i64 u8 u16 u32 u64` | |
+| Floats | `f16 f32` | |
+| Vectors | `f32x3`, `u8x4`, `b32x2` | 2 to 4 lanes of any scalar |
+| Matrices | `f32x4x4`, `f16x2x3` | floats only, columns first as in GLSL |
+
+Booleans of every size contain only `true` and `false` and differ only in size. Like integers of different widths, booleans of different sizes only meet through `as`. Numbers become booleans by comparison, as in `x != 0`.
+
+The short names are spellings of a general bracketed form: `f32x3` is short for `[vector; 3]f32` and `f32x4x3` for `[matrix; 4][vector; 3]f32`. You only need the bracketed form when a size comes from a constant or a generic parameter.
+
+### Named types
+
+Structs, enums, and domains are nominal. Two declarations with the same contents are still different types. Aliases are different. `type Color = f32x4;` just gives `f32x4` another name.
+
+Writing `...` in a struct includes the fields of another struct. It isn't inheritance and doesn't make a subtype.
+
+```bento
+struct Pair { first: f32, second: f32 }
+struct Triple { ...Pair, third: f32 }
+```
+
+Enums are `i32` unless you write another signed or unsigned integer type after the name, as in `enum Mode : u8 { Flat = 1, Lit = 2 }`. Bento checks that the values fit that type. Enums in buffers are laid out as that type.
+
+Domains are types whose values are exactly the ones you list. The list can mix single values and ranges. `a..=b` includes `b`, `a..<b` stops before it, and `a..` has no end. Overlapping and adjacent ranges merge together. `domain { 0, 1, 2, 3 }` and `domain { 0..<4 }` describe the same values.
+
+```bento
+domain Tap : i32 { -2..=2 }
+domain Power : u32 { 1, 2, 4, 8 }
+domain Mip : f32 { 0.25, 0.5, 1.0 }
+```
+
+The type of a domain can be any integer or float type. When you leave it out, Bento uses `u32` if no value is below 0, `i32` if one is, and `f32` if any value is a float literal. NaN isn't allowed. `0.0` and `-0.0` count as the same value.
+
+Constants convert to a domain when their value is in it and are an error otherwise. That is why `let t: Tap = 3;` doesn't compile. A run-time value of the underlying type converts with `as` without a check. A value outside the domain is undefined, just like an index out of range. Going the other way, domain values only convert out with `as`, as in `t as i32`. In fact an enum is just a domain whose values have names.
+
+### Indexed types
+
+Every type written `[kind; parameter]T` is an *indexed type*. Indexing it gives you a `T`. Types read left to right in the order you index them.
+
+Each indexed type has a set of keys. Structs have one key for every field. Instead of separate rules for indexing, initializers, and `for ... in`, Bento has one rule over those keys that covers all three. You index with a key. A positional initializer lists one value for every key in key order. A keyed initializer writes `KEY = value` for each key. A range key like `0..<4 = 1.0` covers every key in the range. `for k in` walks the keys in that same order. Key order is ascending for numbers and follows the order of declaration for enumerators and fields. Naming a key that doesn't exist, giving a key twice, and leaving a key out are all errors.
+
+| Type | Keys | Gives |
+| --- | --- | --- |
+| `[array; 4]T` | a `u32` from 0 to 3 | `T` |
+| `[array; ?]T` | a `u32` within a length counted from the initializer | `T` |
+| `[array; _]T` | a `u32` within a length unknown at compile time | `T` |
+| `[table; D]T` | a value of the domain or enum `D` | `T` |
+| `[vector; 4]T` | a lane | `T` |
+| `[matrix; 4]V` | a column | the column vector `V` |
+| `[texture; 2]T`, `[image; 2]T`, `[sampled; 2]T` | integer coordinates | a texel of `T` |
+| `[layer; K]I` | a layer | one layer of the image `I` |
+
+### Arrays
+
+Arrays are indexed by `u32`. An `[array; _]T` has no length and can only live in storage memory, much like an unsized array in a GLSL buffer block. With `[array; ?]T` the length is counted from the initializer, as in `[array; ?]u32 { ...1..=4, 8, 16 }`.
+
+Lengths can be written with arithmetic. `[array; N + M]T` and `[array; M + N]T` are the same type.
+
+### Tables
+
+A table is like an array, except it's indexed by a domain of its own rather than by every value of an integer type. Sparse domains are allowed and leave no holes in the storage underneath. Other languages would call this a sparse array, or an enumerated array when the domain is an enum. Once a domain can have numbers alongside named enumerators, both turn out to be the same kind of indexable type, a table.
+
+Domains are what enable both a lot of efficient high level code and the `requires` system of [Uber shaders](uber.html). A blur kernel with taps from -2 to 2 is a small example:
+
+```bento
+domain Tap : i32 { -2..=2 }
+
+const WEIGHTS = [table; Tap]f32 { 0.0625, 0.25, 0.375, 0.25, 0.0625 };
+
+fn blur(row: [array; 64]f32, x: i32) -> f32 {
+	let sum: f32 = 0;
+	const for t in Tap {
+		sum += row[(x + (t as i32)) as u32] * WEIGHTS[t];
+	}
+	return sum;
+}
+```
+
+The five taps are `WEIGHTS[-2]` through `WEIGHTS[2]`. In GLSL this would be a plain array with the padding or offset tracked by hand at every index. The table only accepts a `Tap`. A stray `i32` used as an index is a compile error instead of a bug you find later.
+
+When a `Tap` is only known at run time, Bento inserts the `+2` that turns a tap into a slot for you. A constant tap folds straight to the weight itself. The sum in `total` disappears entirely once the `const for` over every tap is unrolled:
+
+::: pair
+```bento before
+domain Tap : i32 { -2..=2 }
+
+const WEIGHTS = [table; Tap]f32 {
+	0.0625, 0.25, 0.375, 0.25, 0.0625
+};
+
+export fn weight(t: Tap) -> f32 {
+	return WEIGHTS[t];
+}
+
+export fn center() -> f32 {
+	return WEIGHTS[0];
+}
+
+export fn total() -> f32 {
+	let sum: f32 = 0;
+	const for t in Tap {
+		sum += WEIGHTS[t];
+	}
+	return sum;
+}
+```
+```ir after
+global @WEIGHTS: [array; 5]f32 constant internal = $0x1p-4, $0x1p-2, $0x1.8p-2, $0x1p-2, $0x1p-4
+
+fn @weight(i32) -> f32 export
+%bb0(%r1):
+	%r3 = global @WEIGHTS
+	%r5 = iadd %r1, $2
+	%r6 = access %r3, %r5
+	%r7 = load %r6
+	return %r7
+
+fn @center() -> f32 export
+%bb0:
+	return $0x1.8p-2
+
+fn @total() -> f32 export
+%bb0:
+	return $1.0
+```
+:::
+
+In `const for t in Tap` the loop variable is already a `Tap`. Indexing a table over a single range costs a subtraction, or nothing when the range starts at 0. Sparse domains are looked up and constant indices fold away.
+
+Tables over an enum are indexed by enumerator. `.Name` resolves the same way it does anywhere else the enum is known:
+
+```bento
+enum Axis { X, Y, Z }
+
+const BLUR = [table; Axis]f32 { 0.25, 0.5, 0.25 };
+
+fn weight(axis: Axis) -> f32 {
+	if axis == .Z {
+		return BLUR[.Z];
+	}
+	return BLUR[axis];
+}
+```
+
+Range keys are handy for step functions and lookup tables:
+
+```bento
+domain Level : u32 { 0..<16 }
+
+const FALLOFF = [table; Level]f32 { 0..<4 = 1.0, 4..<12 = 0.5, 12..<16 = 0.0 };
+const SPREAD = [table; Axis]f32 { .Z = 0.25, .X = 0.25, .Y = 0.5 };
+```
+
+You can't mix positional and keyed values in one initializer. Overlapping ranges count as giving a key twice.
+
+### Other types
+
+| Kind | Written | Notes |
+| --- | --- | --- |
+| Tuples | `(f32x3, f32)` | results of a function only |
+| References | `&storage [array; _]f32` | memory space written out, see [memory spaces](#memory-spaces) |
+| Images and textures | `[image; 2]f32`, `[texture; 2]f32`, `[sampled; 2]f32` | see [images, textures, and samplers](#images-textures-and-samplers) |
+| Samplers | `sampler` | bound apart from textures |
+| Untyped textures and images | `texture`, `image` | only in heap structs, typed where they're used |
+| Rays and scenes | `r32`, `r16`, `scene` | see [ray tracing](#ray-tracing) |
+
+## Literals
+
+GLSL and HLSL quietly turn an `int` into a `float` in mixed arithmetic. In Bento only literals convert implicitly. Integer literals coerce to any integer or float type wide enough for them. Float literals coerce to any float type. With no context to go on, integer literals are `i32` and float literals are `f32`. Every other conversion is written out with `as`.
+
+```bento strict.bento
+fn strict(i: i32, f: f32) -> f32 {
+	let a: i8 = 128;
+	let b: i32 = 1.5;
+	let c: f32 = i;
+	let e = f + i;
+	return f;
+}
+```
+
+```text bento-c strict.bento
+strict.bento:2:14: error: 128 does not fit in 'i8'
+strict.bento:3:15: error: expected 'i32' but found a float literal
+strict.bento:4:15: error: expected 'f32' but found 'i32'
+strict.bento:5:10: error: '+' cannot be used on 'f32' and 'i32'
+```
+
+Integer literals can be written in decimal, `0x` hex, `0b` binary, or `0o` octal. Digits can be separated with `_`. Negated literals still count as literals. `-128` is a valid `i8`.
+
+## Swizzles, selectors, and spreads
+
+Swizzles are written with up to four lanes from `xyzw` or `rgba`. Unlike GLSL, they can contain `0` and `1` in any position. You can assign to any swizzle without repeats or constants.
+
+```bento
+let opaque = color.rgb1;
+let flat = normal.x0z;
+let w = color;
+w.xz = normal.yx;
+```
+
+A bare `.Name` is an enumerator of whatever enum is known from context: an argument, an initializer element, an index into a table, or the other side of a comparison.
+
+`...` spreads a vector, struct, array, or the results of a call into an argument list, an initializer, a return, or image coordinates.
+
+```bento
+let darker = f32x4 { ...rgb * 0.5, alpha };
+let joined = [array; 5]f32 { ...f32x2 { x, y }, ...rgb };
+let texel = cs.src[...t.global.xy];
+```
+
+## Operators
+
+Precedence follows Go rather than C. In C `a & b == c` means `a & (b == c)`, almost never what anyone wants. In Bento it's `(a & b) == c`.
+
+| Tightest first | Operators |
+| --- | --- |
+| Postfix | `f()` `a[i]` `.field` |
+| Access | `&x` `*r` |
+| Power | `**`, right to left |
+| Unary | `-` `!` `~` |
+| Cast | `as` |
+| Multiplicative | `*` `/` `%` `<<` `>>` `&` |
+| Additive | `+` `-` `\|` `^` |
+| Comparison | `==` `!=` `<` `<=` `>` `>=` |
+| Reduction | `any` `all` |
+| And | `&&` |
+| Or | `\|\|` |
+| Conditional | `c ? a : b`, right to left |
+
+`x ** n` multiplies `x` by itself for a constant `n` of at least 0. Between matrices and vectors `*` is the linear algebra product, as it is in GLSL. Scalars next to vectors or matrices apply to every lane.
+
+Comparing vectors gives you `b32` vectors. The prefix operators `any` and `all` reduce such a vector to one `b32` and apply to a whole comparison, as in `any a < b || all c > d`. GLSL needs `any(lessThan(a, b))` for the same thing. Only the chosen side of `c ? a : b` is evaluated and both sides count as divergent code. `as` converts between any two scalars, between vectors of the same width and matrices of the same size, and between enums or domains and their underlying types.
+
+Integers are two's complement and wrap whether they're signed or unsigned: `2147483647 + 1` is `-2147483648` as an `i32`. Signed division is the exception. The smallest value divided by -1 has no answer that fits and is undefined at run time, the same as dividing by zero. Both are errors when the values are known while compiling.
+
+Constant shift amounts have to be at least 0 and less than the bit width of the scalar being shifted. Indices known at compile time to be out of range are errors.
+
+## Control flow
+
+As in Go and Rust, conditions of `if` and `for` are written without parentheses and their arms are always blocks. An `if` header can start with a `let` or `const` that is scoped to the whole chain.
+
+```bento
+fn classify(x: f32) -> i32 {
+	if let y = x * 2; y > 10 {
+		return 2;
+	} else if y > 1 {
+		return 1;
+	} else {
+		return 0;
+	}
+}
+```
+
+`for` is the only loop and comes in three forms: `for init; condition; step`, `for condition`, and a bare `for`. Bare `for` loops with no `break`, `return`, or `kill` inside can never end and are reported as errors. Functions with results can't run off the end.
+
+### Kill and demote
+
+Fragment shaders have two ways to throw away a fragment. `demote` demotes the current thread to a *helper thread* and `kill` kills the entire thread.
+
+Helper threads run to the end of the shader with their outputs and later writes to memory thrown away. Neighboring threads in the quad can still compute derivatives with them. Killed threads stop right there. Derivatives after a `kill` in divergent code are an error.
+
+Most shading languages only give you one of them through a single `discard`. Which one is kind of undefined and ironically depends on the API you're using, sometimes even on its version:
+
+| API | What `discard` does |
+| --- | --- |
+| OpenGL | kills |
+| Vulkan | either, depending on the driver |
+| Direct3D 12 | demotes |
+| WebGPU | demotes |
+| Metal 2.2 and earlier | kills |
+| Metal 2.3 and later | demotes |
+
+Bento gives you both and their meaning never changes. Where a target lacks one, Shokado [emulates it](targets.html#kill-and-demote).
+
+## Functions and results
+
+Functions can be overloaded on their parameters, their results, and the memory spaces of references. When a call passes a `.Name` argument, it resolves to the overload whose enum has that enumerator.
+
+```bento
+fn split(c: f32x4) -> (f32x3, f32) {
+	return c.rgb, c.a;
+}
+
+fn half(x: f32) -> f32 { return x * 0.5; }
+fn half(x: f16) -> f16 { return x * 0.5; }
+
+fn tour(c: f32x4) -> f32 {
+	let (rgb, alpha) = split(c);
+	let h: f16 = half(2.0);
+	return rgb.x + alpha + h as f32;
+}
+```
+
+Where GLSL and HLSL would use `out` parameters, Bento functions return several results. You split them with `let (a, b) = f();` or pass them straight on with `return f();`.
+
+A parameter written `const`, as in `fn spin(at: f32x2, const turns: u32) -> f32x2`, only accepts an argument known at compile time. It's a [value parameter](#generics) written where an argument goes. Each distinct argument gives `spin` an instance of its own, inside which `turns` is a constant that can size an array, choose a `const if` arm, or appear in `requires`. The builtins in `std` use `const` where an instruction needs a fixed operand, like the component of a gather or the offset of a sample.
+
+### Function types
+
+Functions can be passed to other functions. A function type is written like a declaration with no name or body, as in `fn(f32) -> f32`, and admits any function with that signature. Parameter names are optional in both.
+
+```bento
+fn apply(cb: fn(i32) -> i32, x: i32) -> i32 {
+	return cb(x);
+}
+
+fn twice(x: i32) -> i32 { return x * 2; }
+fn halve(x: i32) -> i32 { return x / 2; }
+
+const PICK = twice;
+
+let a = apply(twice, 10);
+let b = apply(wide ? twice : halve, 10);
+let c = apply(PICK, 10) + PICK(1);
+```
+
+GPUs have no function pointers and a function is a value only while compiling. It can be passed as an argument, given to a `const`, or chosen with `?`, but never stored, returned, or bound again. Functions that accept one are generic. `apply(twice, 10)` calls an instance of `apply` made for `twice` that calls `twice` directly. A choice made with `?` at run time branches between the instances for each side. Generic functions are values once every generic argument is given, as in `apply(id![i32], 3)`.
+
+Functions with `const` parameters become values once those are fixed. `f!(...)` refers to `f` without calling it, with a constant for each `const` parameter and `_` for each one left to the call. With `spin` from above, `spin!(_, 4)` is a `fn(f32x2) -> f32x2` that always turns 4 times. Generic arguments go in brackets before it, as in `times![f32]!(3, _)`.
+
+```bento
+fn offset(const by: i32, x: i32, const twice: b32) -> i32 { ... }
+
+const LIFT = offset!(5, _, true);
+
+let a = apply(offset!(1, _, false), 2);
+let b = LIFT(1) + offset!(4, _, false)(1);
+```
+
+It isn't a closure like `std::bind` in C++. Only `const` parameters can be filled in and `offset!(5, _, true)` is the same instance of `offset` that `offset(5, x, true)` calls.
+
+## Methods
+
+Methods are functions whose first parameter is named `self`. `c.luminance()` is the same call as `luminance(c)`. There's no `impl` block as in Rust and `self` is written out like any other parameter. When `self` is a reference and the method is called on a variable, a field, or a buffer element, Bento makes the reference for you.
+
+```bento
+struct Particle { position: f32x3, speed: f32 }
+
+fn luminance(self: f32x3) -> f32 {
+	return std::dot(self, f32x3 { 0.2126, 0.7152, 0.0722 });
+}
+
+fn fall(self: &storage Particle, dt: f32) {
+	self.position.y -= self.speed * dt;
+}
+
+fn step(p: &storage Particle, color: f32x4, dt: f32) -> f32 {
+	p.fall(dt);
+	return color.rgb.luminance();
+}
+```
+
+Methods can be declared on any type in any module, built-in types included. Method calls look through every imported module as well as the names in scope. Fields and methods can share a name: `p.speed` reads the field and `p.speed()` calls the method.
+
+## Compile-time code
+
+In Bento `const` always means known at compile time. A `const` declaration is a value computed at compile time, `const if` and `const for` are decided and unrolled at compile time, and a [`const` parameter](#functions-and-results) only accepts arguments known at compile time.
+
+Constants can be scalars, vectors, matrices, arrays, or structs.
+
+```bento
+const FIBONACCI = (f32x2x2 { 1, 1, 1, 0 } ** 10)[0].x;
+const POWER = 2 ** 3 ** 2;
+const SWIZZLED = f32x4 { 1, 2, 3, 4 }.wzyx.x01y;
+```
+
+Bento folds these to `89.0`, `512`, and `{ 4, 0, 1, 3 }`.
+
+Wherever Bento expects a constant, a named constant converts by value just like a literal does. `const MASK: u8 = WIDTH - 1;` compiles as long as the value fits in a `u8`, whatever integer type `WIDTH` has. The same goes for attribute arguments and for the values and ranges of a domain, as in `domain Lanes { 1, WIDE..=MAX }`.
+
+Unlike text disabled by a preprocessor `#if`, `const if` and `const for` are type checked like any other code. Every arm of a `const if` is checked in a scope of its own and only the chosen arm is compiled. `const for` is unrolled and has to terminate statically.
+
+```bento
+const TAPS = 4;
+
+fn soften(c: f32x4) -> f32x4 {
+	let sum: f32 = 0;
+	const for let i = 0; i < TAPS; i += 1 {
+		sum += c.x * (i as f32);
+	}
+	const if TAPS > 2 {
+		sum *= 0.5;
+	}
+	return c * sum;
+}
+```
+
+[Uber shaders](uber.html) are written the same way, with `const if` and `const for` over the members of a `feature`.
+
+`const fn` functions run only at compile time and a call to one is a constant wherever it's written. `std::size_of` and `std::align_of` give the size and alignment in bytes of a type in storage memory. `std::count_of` gives the number of lanes, columns, elements, or entries an index covers, or 0 for anything that can't be indexed.
+
+Values of a `const fn` have the type `const fn(A) -> R`. Calls through a parameter of that type are constants for each instance.
+
+In a generic body the value is known for each instance rather than once. `const size = std::size_of![T]();` is still a constant that a `const if` can test, but array lengths can't use it.
+
+```bento
+struct Light { position: f32x3, power: f32 }
+
+const STRIDE = std::size_of![Light]();   // 16
+const ALIGN = std::align_of![f32x3]();   // 16
+const LANES = std::count_of![f32x3]();   // 3
+let scratch: [array; std::size_of![u64]()]f32;
+let offset = index * STRIDE + std::size_of![f32x3]();
+```
+
+## Generics
+
+Generic parameters go in brackets after the name. Parameters with a bound, like `T: Numeric`, are type parameters and `T: Any` admits any type. Those bounded by `Readable` or `Writable` are memory spaces. Values known at compile time are [`const` parameters](#functions-and-results) written with the other parameters.
+
+Lengths don't go in the brackets either. Writing `const N` for the length of an array, the lanes of a vector, or the columns of a matrix in the type of a parameter makes `N` a value parameter read from the argument. Later parameters, the result, and the body can all use `N`. `lerp` below accepts two vectors with the same number of lanes.
+
+```bento
+fn sum[T: Numeric](xs: [array; const N]T) -> T {
+	let total: T = 0;
+	for let i: u32 = 0; i < N; i += 1 {
+		total += xs[i];
+	}
+	return total;
+}
+
+fn lerp[T: Floating](a: [vector; const N]T, b: [vector; N]T, t: T) -> [vector; N]T {
+	return a + (b - a) * t;
+}
+
+let sky = lerp(dawn, noon, 0.25);
+let gray = lerp![f16](a, b, 0.5);
+```
+
+Unlike templates in C++ and HLSL, generics are type checked once and can be exported through bytecode. Errors are reported at the definition or at the call, never from deep inside an instance. Arguments are inferred from the call, or you can write them out with `f![...]`.
+
+The `!` marks generic arguments the way it marks a macro call in Rust. Without it, `f[2]` would be an index and `f<2>` a comparison.
+
+Each family of bounds comes in three forms: the scalars, the vectors of 2 to 4 of them, and either. The last two bounds admit memory spaces rather than types.
+
+| Bound | Admits |
+| --- | --- |
+| `Signed` | `i8`, `i16`, `i32`, and `i64` |
+| `Unsigned` | `u8`, `u16`, `u32`, and `u64` |
+| `Boolean` | `b8`, `b16`, and `b32` |
+| `Floating` | `f16` and `f32` |
+| `Integral` | `Signed` or `Unsigned` |
+| `Numeric` | `Integral` or `Floating` |
+| `SignedVector` | `[vector; N]Signed` for `N` in `2..=4` |
+| `UnsignedVector` | `[vector; N]Unsigned` for `N` in `2..=4` |
+| `BooleanVector` | `[vector; N]Boolean` for `N` in `2..=4` |
+| `FloatingVector` | `[vector; N]Floating` for `N` in `2..=4` |
+| `IntegralVector` | `SignedVector` or `UnsignedVector` |
+| `NumericVector` | `IntegralVector` or `FloatingVector` |
+| `SignedLike` | `Signed` or `SignedVector` |
+| `UnsignedLike` | `Unsigned` or `UnsignedVector` |
+| `BooleanLike` | `Boolean` or `BooleanVector` |
+| `FloatingLike` | `Floating` or `FloatingVector` |
+| `IntegralLike` | `Integral` or `IntegralVector` |
+| `NumericLike` | `Numeric` or `NumericVector` |
+| `Readable` | the spaces `thread`, `workgroup`, `storage`, and `constant` |
+| `Writable` | the spaces `thread`, `workgroup`, and `storage` |
+
+The three bounds of a family allow the same operations, lane by lane on vectors. Comparisons of vectors give a vector of `b32`.
+
+| Family | Allows |
+| --- | --- |
+| `Numeric` | arithmetic, comparisons, and `as` |
+| `Integral` | bitwise operators and the bit builtins |
+| `Signed` | negative integer literals, `abs`, and `sign` |
+| `Unsigned` | the builtins only unsigned integers have, like `add_carry` |
+| `Floating` | float literals, the float math library, and derivatives |
+| `Boolean` | `true` and `false`, logic operators, and conditions |
+
+`Any` admits every value that can be stored and allows only copying, passing, returning, and arrays. A bare `T` with no bound is an error. Parameters that accept anything say so with `Any`.
+
+Value parameters can be narrowed with a `requires` clause after the result. Constant indices and swizzles are checked against the smallest value the clause allows, once, at the definition. A call with a length outside it is an error at the call. Without the clause below, `N` could be 2 and `v.z` would be rejected.
+
+```bento
+fn depth[T: Floating](v: [vector; const N]T) -> T requires N >= 3 {
+	return v.z;
+}
+```
+
+Clauses compare value parameters with constants and combine the comparisons with `&&`, `||`, and `!`, as feature clauses do. `requires N == 2 || N == 4` accepts vectors of two or four lanes and rejects three.
+
+A `const if` on value parameters, or on a `const fn` such as `std::size_of` of a type parameter, is decided for each instance. Both arms are still checked once at the definition. Inside each arm the condition narrows the parameters the way a `requires` clause does. That's why `v.z` below is accepted even though `N` can be 2. Arms no instance can choose are an error.
+
+A `const for` can count up to a value parameter, as in `const for let i: u32 = 0; i < N; i += 1`. Each instance unrolls it for its own `N` and `v[i]` into a `[vector; N]` is always in range.
+
+Generic bodies are checked once, for every instance they admit. Indices, divisors, and shift amounts that depend on a value parameter have to be valid for every value the clauses and enclosing arms allow. `10 / (N - 4)` is rejected because `N` can be 4. Adding `requires N != 4` fixes it for the whole function and wrapping the division in `const if N != 4` fixes it where it stands. Nothing is reported later, when an instance is made.
+
+```bento
+fn third(v: [vector; const N]f32) -> f32 {
+	const if N >= 3 {
+		return v.z;
+	} else {
+		return v.x;
+	}
+}
+```
+
+Lengths can be written with arithmetic on generic parameters too:
+
+```bento
+fn join[T: Any](a: [array; const N]T, b: [array; const M]T) -> [array; N + M]T {
+	return { ...a, ...b };
+}
+```
+
+### Generic structs
+
+Structs have type parameters in brackets the same way functions do, `const` parameters in parentheses after them, and a `requires` clause before the fields. Types refer to an instance by giving the arguments with `!`, as in `Grad!(2)`, `Box![i32]`, or `Pair![i32]!(2)`. Struct literals infer them from their fields or write them out, as in `Grad!(2) { ... }`.
+
+```bento
+struct Grad(const n: u32) {
+	dx: [vector; n]f32,
+	dy: [vector; n]f32,
+}
+
+struct Pair[T: Numeric](const n: u32) requires n <= 3 {
+	a: [vector; n]T,
+	b: T,
+}
+
+fn slope(g: Grad!(2)) -> f32 {
+	return g.dx.x + g.dy.y;
+}
+
+let g = Grad { dudx, dudy };
+let h = Grad!(3) { dpdx, dpdy };
+let p: Pair![i32]!(2) = { i32x2 { 1, 2 }, 3 };
+```
+
+Every instance is a struct of its own with its own layout, `Grad!(2)` and `Grad!(3)` here. The struct itself is checked once where it's declared and instances are checked the way calls are. Exported generic structs travel through bytecode and the linker merges the instances each importer builds.
+
+## Interfaces
+
+Interfaces are named lists of function signatures. Any type for which those functions exist satisfies them. Rust and Slang make a type declare which interfaces it conforms to. Bento has no `impl` blocks or coherence rules.
+
+```bento
+interface Light[L: Any] {
+	fn radiance(light: L, at: f32x3) -> f32x3;
+	fn direction(light: L, at: f32x3) -> f32x3;
+}
+
+struct Point { position: f32x3, color: f32x3 }
+
+fn radiance(light: Point, at: f32x3) -> f32x3 {
+	let d = light.position - at;
+	return light.color / std::dot(d, d);
+}
+
+fn direction(light: Point, at: f32x3) -> f32x3 {
+	return std::normalize(light.position - at);
+}
+
+fn shade[L: Light](light: L, at: f32x3, n: f32x3) -> f32x3 {
+	return radiance(light, at) * std::max(std::dot(n, direction(light, at)), 0.0);
+}
+```
+
+Inside `shade` only the functions listed in `Light` are allowed. When `shade` is called with a `Point`, ordinary overloading finds the functions for `Point` at the call.
+
+## Memory spaces
+
+As with pointers in Metal, the memory space is part of every reference type. References can't be converted between spaces.
+
+| Space | Memory | GLSL | HLSL | Metal |
+| --- | --- | --- | --- | --- |
+| `thread` | variables of one thread | locals | locals | `thread` |
+| `workgroup` | memory shared by a workgroup | `shared` | `groupshared` | `threadgroup` |
+| `storage` | storage buffers, read and written | `buffer` | `RWByteAddressBuffer` | `device` |
+| `constant` | constant buffers, read only | `uniform` | `cbuffer` | `constant` |
+
+`&x` has the space of `x`. `*r` reads or writes through `r`. Fields, indices, and swizzles go through a reference without needing a `*`. References only exist as parameters and `let` bindings.
+
+::: note
+References passed to one call must not overlap. Bento rejects a call when two of its references might point at the same memory, much as Swift rejects overlapping `inout` arguments. The check is conservative: `&v[0]` and `&v[1]` are fine but `&v[i]` and `&v[j]` aren't.
+:::
+
+```bento
+struct Particle { position: f32x3, speed: f32 }
+
+fn fall(p: &storage Particle, dt: f32) {
+	p.position.y -= p.speed * dt;
+}
+```
+
+Functions that should work on a buffer element and a local alike have their space as a generic parameter. `Readable` admits every space and `Writable` all but `constant`. Bodies checked against `Readable` can only read through the reference. Passing a constant buffer where `Writable` is asked for is an error at the call. The space is inferred from the reference or written out, as in `bump![storage](&x)`.
+
+```bento
+fn bump[T: Numeric, M: Writable](x: &M T) {
+	*x += 1;
+}
+
+fn height[M: Readable](self: &M Particle) -> f32 {
+	return self.position.y;
+}
+
+let n: i32 = 0;
+bump(&n);
+bump(&particles[i].speed);
+let h = particles[i].height() + local.height();
+```
+
+Buffers, workgroup memory, and images can be passed to functions. Workgroup memory is declared with `let` instead of as a global variable and starts out undefined.
+
+```bento
+struct Sums {
+	[[storage(0)]] values: [array; _]f32,
+	[[storage(1)]] totals: [array; _]f32,
+}
+
+[[stage(.Compute), workgroup_size(64)]]
+fn reduce(cs: Sums) with (t: Thread, group: WorkGroup) {
+	let part: workgroup [array; 64]f32;
+	part[t.index] = cs.values[t.global.x];
+	thread if t.index == 0 {
+		let sum: f32 = 0;
+		for let i = 0; i < 64; i += 1 {
+			sum += part[i];
+		}
+		cs.totals[group.id.x] = sum;
+	}
+}
+```
+
+In GLSL and HLSL barriers are written by hand. In Bento you don't write them. Bento inserts the barrier before the `thread if` because the whole workgroup is still together there. Where no such point exists, it splits branches to make one.
+
+### Images, textures, and samplers
+
+::: note
+Textures and images come down to four types:
+
+- `[image; N]T` is a storage image that is read and written directly.
+- `[texture; N]T` is texture data indexed with `[]` and the only texture type with samples.
+- `[sampled; N]T` is a texture combined with a sampler, either bound already combined or built in the shader in Vulkan, Direct3D 12, and Metal.
+- `sampler` is a sampler object alone.
+:::
+
+GLSL uses the word sampler for two different things, a sampler object and a texture combined with one, as in `sampler2D`. Bento separates the two. Samplers are only sampler objects and aren't tied to any texture. Textures combined with a sampler are *sampled textures*, written `[sampled; N]T`.
+
+| Bento | What it is | GLSL | Vulkan | Direct3D 12 | Metal |
+| --- | --- | --- | --- | --- | --- |
+| `[image; N]T` | storage image | a GLSL image | storage image | UAV | a Metal texture with `access::read_write` |
+| `[texture; N]T` | texture data, read with `[]` | a GLSL sampler in OpenGL, read with `texelFetch` | sampled image | SRV | a Metal texture, read with `read` |
+| `[sampled; N]T` | a texture combined with a sampler | a GLSL sampler | combined image sampler | SRV and a sampler | a Metal texture and a `sampler` |
+| `sampler` | sampler object | none, an error in OpenGL | sampler | sampler | `sampler` |
+
+In GLSL the sampler and image types are named after the form of the texture, from `sampler1D` and `image1D` to `samplerCubeArray` and `imageCubeArray`. Integer texels add an `i` or `u` prefix.
+
+Sampled textures can be built in the shader from a texture and a sampler bound apart, or bound already combined. OpenGL only allows the latter.
+
+Storage images are read and written with one integer coordinate per dimension. Their texels are always a four component vector type with the same scalar type as the image.
+
+```bento
+struct Blit {
+	[[image(0)]] src: [image; 2]f32,
+	[[image(1)]] dst: [image; 2]f32,
+}
+
+[[stage(.Compute), workgroup_size(8, 8)]]
+fn swap(cs: Blit) with (t: Thread) {
+	let texel = cs.src[...t.global.xy];
+	cs.dst[...t.global.xy] = texel.bgra;
+}
+```
+
+Sampled textures are bound with `texture(n)`. Indexing one reads a texel by integer coordinates at level 0, or at the level written after the coordinates, as in `t[x, y, level]` or `t[...at, level]`, much like `texelFetch` in GLSL. Textures are read the same way. Storage images and multisampled textures only have a single level and are read at the level they're bound as. Filtered sampling is done with the [sampling](#sampling) methods. Cubes are written `[sampled; 6]f32`.
+
+```bento
+struct Surface {
+	[[texture(0)]]  albedo: [sampled; 2]f32,
+	[[location(0)]] uv:     f32x2,
+}
+
+let first = fs.albedo[0, 0];
+```
+
+Every image, texture, and sampled texture reports its own size. GLSL spreads this over `textureSize`, `imageSize`, and `textureQueryLevels`. Bento has two methods from `std`: `dimensions` returns the size as `u32` lanes, one for each dimension and two for a cube, at level 0 or at the level you pass, and `levels` returns the number of levels. Storage images and multisampled textures have no `levels` and no level argument.
+
+```bento
+let size = t.dimensions();
+let next = t.dimensions(1);
+let count = t.levels();
+```
+
+Layered textures add their number of layers as one more lane: `[layer; _][sampled; 2]f32` gives a `u32x3`. Layered cubes count whole cubes, not faces. A single layer gives the size of that layer alone.
+
+#### Sampling
+
+GLSL gives every combination of sampling choices a name of its own, from `textureLod` to `textureProjGradOffset`. HLSL does much the same with `SampleLevel`, `SampleGrad`, and the rest. Bento follows Metal instead. Sampled textures have three methods from `std`: `sample`, `gather`, and `lod`. Every choice you add is a value of its own type after the coordinate.
+
+```bento
+let a = t.sample(uv);
+let b = t.sample(uv, std::Bias { 0.5 });
+let c = t.sample(uv, std::Level { 2.0 }, std::Offset { i32x2 { 1, -1 } });
+let d = t.sample(uv, std::Grad { dx, dy }, std::Clamp { 1.0 });
+let e = t.gather(uv, .G);
+let (level, unclamped) = t.lod(uv);
+let (f, resident) = t.sample(uv);
+```
+
+The level comes first, as one of `std::Bias`, `std::Level`, or `std::Grad`, then `std::Offset`, then `std::Clamp`, the coarsest level the sample may use. Combinations no API has don't type check, such as `Clamp` with an explicit `Level` or an offset on a cube. Offsets are constants. `gather` reads one component of the four texels the bilinear filter would blend, at a constant `.R`, `.G`, `.B`, or `.A`, and accepts one offset as `std::Offset` or four as `std::Offsets`. `lod` returns the level a sample would use, clamped to the levels of the texture and before clamping. Asking for a second result reports whether every texel a sample touched was resident in a sparse texture.
+
+`sample` without a level, or with `Bias`, chooses its level from derivatives. Like `dpdx` it's only allowed in fragment shaders and where threads haven't diverged. `Level`, `Grad`, `gather`, and indexing work in every stage. Compute shaders have the same hardware filtering by naming a level or passing derivatives of their own. Integer textures are read and gathered but never sampled. There are no projective forms. Divide by the last coordinate yourself.
+
+Depth comparisons, the hardware filter behind soft shadows, are methods of float sampled textures in 2D and cubes. `compare` tests a reference value against the texels a sample would read and returns the fraction that passed. `gather` accepts the reference in place of the component and returns the four results separately. The API fixes whether a sampler compares when it's created, and samplers are used for comparisons or for sampling but not both. Sampled textures bound with `texture(n)` count as a sampler of their own. One texture can still be joined with two samplers, one for each use.
+
+```bento
+let shadow = [sampled; 2]f32 { fs.depth, fs.less };
+let lit = shadow.compare(uv, depth, std::Level { 0.0 });
+let nearest = [sampled; 2]f32 { fs.depth, fs.nearest };
+let blockers = nearest.gather(uv, .R);
+```
+
+#### Layered textures
+
+Layered textures are written with `[layer; K]` in front of the texture, as in `[layer; K][sampled; 2]f32` for `K` layers or `[layer; _][sampled; 2]f32` for any count. The same goes for `image` and `texture`. Indexing a layered texture with a layer gives you a regular texture of just that layer, an ordinary `[sampled; 2]f32` that you can bind with `let` or pass to any function written for one.
+
+```bento
+struct Terrain {
+	[[texture(0)]]                      albedo: [layer; 8][sampled; 2]f32,
+	[[location(0), interpolate(.Flat)]] layer:  u32,
+}
+
+fn read(t: [sampled; 2]f32, at: i32x2) -> f32x4 {
+	return t[...at];
+}
+
+let ground = read(fs.albedo[fs.layer], i32x2 { 4, 4 });
+let first = fs.albedo[0][0, 0];
+```
+
+Constant layers are checked against `K` at compile time.
+
+#### Multisampled textures
+
+Where GLSL has separate `sampler2DMS` types and passes the sample to `texelFetch` as an extra argument, Bento puts the samples of a multisampled texture in the texel type as an array. `[texture; 2][array; 4]f32` has 4 samples and `[texture; 2][array; _]f32` has any count. The same works for `image` in 2 dimensions. Sampled textures can't be multisampled. Indexing follows the type: the coordinate gives a texel of samples and the sample is one more index after it, just like the index of any other array.
+
+```bento
+struct Resolve {
+	[[position]]   at:    f32x4,
+	[[texture(0)]] color: [texture; 2][array; 4]f32,
+}
+
+let at = fs.at.xy as i32x2;
+let sum = f32x4 { 0, 0, 0, 0 };
+const for let i = 0; i < 4; i += 1 {
+	sum += fs.color[...at][i];
+}
+```
+
+Sample counts are powers of two up to 64. Constant sample indices are checked against the count when the type gives one. `t.samples()` returns the count at run time for shaders written for `[array; _]`. Writing one sample of a storage image works the same way, as in `img[x, y][i] = texel`.
+
+Arrays, layers, and samples all combine. `[array; N][layer; K][texture; 2][array; S]T` is an `N` sized array of `K` layered 2D multisampled textures, each with `S` samples. Every level is indexed in order from the array down to the sample:
+
+```bento
+let texel = t[n][k][x, y][i];
+```
+
+`t[n]` is one `[layer; K][texture; 2][array; S]T`, `t[n][k]` is its layer `k` as a `[texture; 2][array; S]T`, and `[x, y][i]` reads sample `i` of the texel at `x, y`.
+
+Arrays of textures are bound at one binding. Unlike `nonuniformEXT` in GLSL or `NonUniformResourceIndex` in HLSL, indices into them need no marking by hand. Bento adds `NonUniform` wherever the uniformity analysis can't prove an index uniform.
+
+Textures and samplers bound apart are combined in the shader. One texture can be used with several samplers and one sampler with many textures. Sampled textures are built from a texture of the same form and a `sampler`. Textures are indexed like sampled textures, but only sampled textures can be sampled.
+
+```bento
+struct Shade {
+	[[texture(0)]]  albedo:  [texture; 2]f32,
+	[[sampler(0)]]  nearest: sampler,
+	[[location(0)]] uv:      f32x2,
+}
+
+fn read(t: [sampled; 2]f32, at: i32x2) -> f32x4 {
+	return t[...at];
+}
+
+let albedo = [sampled; 2]f32 { fs.albedo, fs.nearest };
+let texel = read(albedo, at);
+```
+
+#### Bindless
+
+Instead of being bound to an entry point, images, textures, sampled textures, and samplers can also be stored in buffers and loaded from them. Stored handles have the same size and alignment in Vulkan, Direct3D 12, Metal, and OpenGL:
+
+| Type | Size | Alignment |
+| --- | --- | --- |
+| `[sampled; N]T` | 16 | 16 |
+| `[texture; N]T`, `[image; N]T`, `sampler` | 8 | 8 |
+
+```bento
+struct Material {
+	albedo: [sampled; 2]f32,
+	mask:   [image; 2]f32,
+	tint:   f32x4,
+}
+
+struct Shade {
+	[[storage(0)]]                      materials: [array; _]Material,
+	[[location(0), interpolate(.Flat)]] index:     u32,
+	[[location(1)]]                     uv:        f32x2,
+}
+
+let material = fs.materials[fs.index];
+let texel = material.albedo[0, 0] * material.tint;
+```
+
+Stored handles are ordinary values. You can copy them into locals, structs, and arrays in any memory, write them back to buffers, and choose between them with `?:`.
+
+`as` converts handles to and from integers: sampled textures to `u32x4` and other handles to `u32x2` or `u64`. A `u32` converts to a handle as its slot in the descriptor heap. Converting an integer that isn't a handle or a slot is undefined.
+
+Handles bound to an entry point have no stored form and can't be stored or converted. The same goes for a single layer of a layered handle.
+
+Structs that contain only resources, or only samplers, can live in the descriptor heap instead, bound with `heap` on a constant buffer that contains the slot where the struct starts. Reading a texture from it is a single fetch from the heap instead of a load followed by a fetch. Heaps of mixed textures use untyped `texture` or `image` elements that are typed where they're used.
+
+```bento
+struct Textures {
+	albedo: [array; _][texture; 2]f32,
+}
+
+struct Lookup {
+	[[constant(0), heap]]               textures: Textures,
+	[[location(0), interpolate(.Flat)]] index:    u32,
+}
+
+let texel = fs.textures.albedo[fs.index][0, 0];
+```
+
+Textures from a heap are their slot and can be stored, converted, and chosen between with `?:` like a texture loaded from a buffer. The [bindings and bindless](bindless.html) page covers the two models in depth.
+
+## Entry points and stages
+
+Entry points are declared with `[[stage(...)]]` and one of `.Vertex`, `.Fragment`, `.Compute`, `.Task`, or `.Mesh`. They can't be called.
+
+| Binding | Used on | Meaning |
+| --- | --- | --- |
+| `attribute(n)` | vertex input | vertex attribute `n` |
+| `location(n)` | vertex output, fragment input | varying `n` |
+| `color(n)` | fragment output | color attachment `n` |
+| `color(0, 1)` | fragment output | second color of attachment 0, for [dual-source blending](#dual-source-blending) |
+| `position`, `frag_depth` | vertex output, fragment output | clip position and depth |
+| `storage(n)`, `constant(n)` | input | storage and constant buffers |
+| `image(n)`, `texture(n)`, `sampler(n)` | input | images, textures and sampled textures, and samplers |
+| `scene(n)` | input | ray tracing scene |
+| `interpolate(.Smooth \| .Flat \| .NoPerspective)` | varying | interpolation, flat for integers |
+
+No two fields of the parameter, or of the result, can share a slot. Matrices use one location or attribute slot per column. Every kind of resource is numbered separately from 0: `constant(0)` and `storage(0)` are two different buffers. Sampled textures are numbered along with the textures. [Bindings](targets.html#bindings) on the targets page maps the numbers onto each API.
+
+```bento
+struct Mesh {
+	[[attribute(0)]] position:  f32x3,
+	[[attribute(1)]] uv:        f32x2,
+	[[constant(0)]]  transform: f32x4x4,
+}
+
+struct Varyings {
+	[[position]]    position: f32x4,
+	[[location(0)]] uv:       f32x2,
+}
+
+struct Lit {
+	...Varyings,
+	[[constant(1)]] tint: f32x4,
+}
+
+struct Target {
+	[[color(0)]] color: f32x4,
+}
+
+[[stage(.Vertex)]]
+fn project(vs: Mesh) -> Varyings {
+	return { vs.transform * vs.position.xyz1, vs.uv };
+}
+
+[[stage(.Fragment)]]
+fn paint(fs: Lit) -> Target {
+	return { fs.tint * std::fract(fs.uv.x) };
+}
+```
+
+The fragment input includes the vertex output with `...Varyings`.
+
+### Dual-source blending
+
+Blending normally mixes one color from the fragment shader with the color already in the attachment. *Dual-source blending* gives the blend a second color from the shader that's only read by blend factors like `SRC1_COLOR`. Subpixel text uses it to blend each channel with its own coverage. GLSL, HLSL, and Metal each spell it differently:
+
+| Language | Second color of attachment 0 |
+| --- | --- |
+| GLSL | `layout(location = 0, index = 1)` |
+| HLSL | `SV_Target1` |
+| Metal | `[[color(0), index(1)]]` |
+| Bento | `[[color(0, 1)]]` |
+
+In Bento the second argument of `color` chooses the source. `color(0)` is short for `color(0, 0)`.
+
+```bento
+struct Subpixel {
+	[[color(0)]]    color:    f32x4,
+	[[color(0, 1)]] coverage: f32x4,
+}
+```
+
+Bento only accepts a second source for `color(0)`, the one attachment Direct3D 12 and Metal can blend two sources into. `color(0, 1)` and `color(1)` can't be used together because Direct3D 12 writes both to `SV_Target1`.
+
+## Context parameters
+
+In GLSL, built-in values such as the thread ID or the fragment coordinate are globals like `gl_GlobalInvocationID` and `gl_FragCoord`. In HLSL they're entry point parameters with semantics. Every function that needs one has to be passed it by hand. Bento uses neither. A function declares what it needs with `with` after the result and reads it through the name given there.
+
+```bento
+fn hash_pixel(seed: u32) -> u32 with (frag: Fragment) {
+	let p = frag.coord.xy as u32x2;
+	return (p.x * 73856093) ^ (p.y * 19349663) ^ seed;
+}
+```
+
+Every context a callee needs has to be available to the caller, either from its own `with` clause or from a `with` block around the call. Entry points have the built-ins of their stage available.
+
+| Context | Fields | Stages |
+| --- | --- | --- |
+| `Thread` | `id`, `index`, `global` | compute, task, mesh |
+| `WorkGroup` | `id`, `size`, `count` | compute, task, mesh |
+| `SimdGroup` | `id`, `size`, `count`, `lane` | `size` and `lane` in every stage, `id` and `count` in compute, task, and mesh |
+| `Vertex` | `index`, `instance`, `draw` | vertex |
+| `Fragment` | `coord`, `front_facing` | fragment |
+
+Bento checks each field against the stages a function can be called from. `Vertex.index` and `Vertex.instance` count from the base vertex and base instance of the draw, as in Vulkan and Metal.
+
+You can declare your own contexts with `context` and supply them in a `with` block to everything called inside it.
+
+```bento
+struct Camera {
+	view:       f32x4x4,
+	projection: f32x4x4,
+}
+
+context View: Camera;
+
+fn to_clip(p: f32x3) -> f32x4 with (camera: View) {
+	return camera.projection * (camera.view * p.xyz1);
+}
+
+struct Model {
+	[[attribute(0)]] position: f32x3,
+	[[attribute(1)]] uv:       f32x2,
+	[[constant(0)]]  camera:   Camera,
+}
+
+[[stage(.Vertex)]]
+fn project(vs: Model) -> Varyings {
+	with (View = vs.camera) {
+		return { to_clip(vs.position), vs.uv };
+	}
+}
+```
+
+Inner `with` blocks shadow outer ones. Contexts are top-level declarations, exported and imported like any other name. Calls into an imported function are checked against the `with` clause stored in the bytecode.
+
+## Ray tracing
+
+Ray tracing in GLSL and HLSL has you declare a payload struct that hit and miss shaders write their results into. In Bento `trace(world, ray)` simply returns an `h32`, the built-in hit type. The payload is derived from whatever is live across the trace and is never declared. Hit, miss, and callable shaders are ordinary functions. Materials are a `switch` on the hit.
+
+```bento
+struct Shadowed {
+	[[scene(0)]]    world: scene,
+	[[constant(1)]] sun:   f32x3,
+	[[location(0)]] at:    f32x3,
+}
+
+struct Lit {
+	[[color(0)]] light: f32,
+}
+
+[[stage(.Fragment)]]
+fn shadow(fs: Shadowed) -> Lit {
+	let ray = r32 { fs.at, fs.sun, 0.001, 1000.0 };
+	let hit = trace(fs.world, ray);
+	thread if hit.found {
+		return { 0.0 };
+	}
+	return { 1.0 };
+}
+```
+
+`scene` is the top-level acceleration structure. Bottom-level structures are hidden from shaders. The `h32` still reports both levels: the custom ID, transform, and object-space ray of the instance, and the geometry index, primitive, and barycentrics.
+
+`r32` is the built-in ray type. Its origin, direction, and range read like fields but can't be changed. Derived data such as the inverse direction is computed once per ray and dropped where hardware does the traversal. `r16` is a storage format for rays in a small local space. The two convert with `as`. `trace` only accepts an `r32`.
+
+Each any-hit filter passed to `trace` runs its own traversal. Procedural geometry is handled by an `[[intersect]]` function. Bounces are written as loops rather than with recursion. The trace depth is known at compile time.
+
+Bento lowers the same source to the Vulkan ray tracing pipeline, to ray queries in Vulkan, Direct3D 12, and Metal, and to software BVH traversal in OpenGL and on GPUs without ray tracing hardware.
+
+## Modules
+
+Files that start with `module name;` are modules. Other modules use the declarations marked with `export` through qualified names, or bring them in with `using`. `export` goes after any attributes, as in `[[opcode(63)]] export fn round(x: f32) -> f32;` from `std`.
+
+```bento light.bento
+/// Lighting helpers.
+module light;
+
+import std;
+
+/// A directional light.
+export struct Sun {
+	/// Unit vector toward the light.
+	direction: f32x3,
+	color:     f32x3,
+}
+
+export enum Mode { Flat, Lit }
+
+export const AMBIENT: f32 = 0.1;
+
+/// Lambert shading, plus a little ambient.
+export fn shade(sun: Sun, n: f32x3, mode: Mode) -> f32x4 {
+	if mode == .Flat {
+		return f32x4 { ...sun.color, 1 };
+	}
+	let facing = std::max(std::dot(n, sun.direction), 0.0);
+	return f32x4 { ...sun.color * (facing + AMBIENT), 1 };
+}
+```
+
+```bento scene.bento
+import std;
+import light;
+using light::Sun;
+using module std;
+
+struct Surface { [[location(0)]] normal: f32x3 }
+struct Shaded { [[color(0)]] color: f32x4 }
+
+[[stage(.Fragment)]]
+fn main(fs: Surface) -> Shaded {
+	let sun = Sun { normalize(f32x3 { 1, 1, 0 }), f32x3 { 1, 0.9, 0.8 } };
+	return { light::shade(sun, normalize(fs.normal), .Lit) };
+}
+```
+
+An import doesn't paste in source text the way `#include` does in GLSL and HLSL. Importers are compiled against the bytecode of a module rather than its source. Linking happens at build time or at run time. A `///` comment documents the declaration after it and shows up on hover in the language server.
+
+## Attributes
+
+Attributes go in one `[[...]]` group in front of whatever they apply to. Besides the bindings above, there are:
+
+stage(.Vertex | .Fragment | .Compute | .Task | .Mesh)
+: entry point for that stage
+workgroup_size(x, y, z)
+: workgroup size of a compute, task, or mesh entry point. Dimensions left out are 1.
+early_depth_test
+: depth and stencil testing before a fragment entry point is run
+math(.Reassoc, .Contract, .Transform, .NoNaNs, .NoInfs, .NoSignedZeros)
+: [fast-math flags](floats.md) for a function or a block, replacing the flags around it. A bare `math` with no flags makes floating point strict.
+inline(true), inline(false)
+: function inlined at every call, even with inlining turned off, or never inlined
+opcode(n)
+: function without a body standing for IR instruction `n`, with the parameters as its operands. All of `std` is declared this way.
+assume, assume(n)
+: unchecked promise about uniformity, covered in [uniformity](uniformity.md)
+intersect
+: intersection function for procedural ray tracing geometry
+
+Unknown, misplaced, and repeated attributes and wrong argument counts are all errors.
+
+Attribute arguments are constant expressions, type checked like the arguments of a call. Named constants work anywhere a number or a selector does, as in `[[workgroup_size(TILE, TILE / 2)]]`.
+
+## Not in the language
+
+- There's no preprocessor. Type checked `const if`, `const for`, generics, and modules do the jobs of macros and `#include`.
+- There's no global scope. Values are passed through parameters, results, and contexts.
+- Recursion isn't allowed.
+- There's no `++`, comma operator, chained assignment, `f32(x)` cast, or `vec3(1.0)` constructor.
+- Bento does not support Tessellation or Geometry shaders and requests to support them won't be accepted.
+</script>
+</body>
+</html>

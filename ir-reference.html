@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>IR Reference · Shokado</title>
+	<meta name="description" content="Reference for Shokado IR: the printed form of modules and functions, types, values, structured control flow, and every instruction with its operands and result.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# IR reference
+
+This page describes the IR as `skd-dis` prints it. Result types are left out of the printed form because they follow from the operands, or from the declaration of whatever the instruction uses.
+
+## Modules
+
+Each module prints as a header followed by its globals and functions:
+
+```ir skd-dis shade.sbc
+module shade
+file 0 "shade.bento" "/src/shade.bento" 83732ed648050a5a007ce369fd87c2b8f06e77966ab6b291a774efa014b65e27
+import std
+type Light = struct Light { direction: f32x3, color: f32x3 } file 0
+
+global @STEPS: [array; 4]f32 constant export file 0 = $0x1p-2, $0x1p-1, $0x1.8p-1, $1.0
+
+fn @lit(Light, f32x3) -> f32x3 export file 0
+%bb0(%r1, %r2):
+	%r7 = extract %r1, $0
+	%r8 = fdot %r2, %r7
+	%r9 = fmax %r8, $0.0
+	%r12 = extract %r1, $1
+	%r13 = global @STEPS
+	%r15 = fmul %r9, $3.0
+	%r16 = convert %r15
+	%r17 = access %r13, %r16
+	%r18 = load %r17
+	%r19 = fmul %r12, %r18
+	return %r19
+```
+
+| Line | Meaning |
+| --- | --- |
+| `module name` | Name of the module. Programs have none. |
+| `file n "name" "path" digest` | Source file `n` with the SHA-256 digest of its text. `skd-strip` removes the file table. |
+| `import name` | Module whose exports this one uses. |
+| `type Name = …` | Exported type, as a struct with its fields, an enum with its values, or any other type. |
+| `global @name: T storage linkage` | Global in `constant` or `workgroup` memory, or `bound` with a binding, as in `bound storage 0`. Constant globals end with their data as `= $…`, every scalar in order and matrices column by column. Entry points bind every bound global their calls use. No two of them may share a slot. |
+| `fn @name(…) -> R …` | Function, followed by its body unless it is imported. |
+
+Names from other modules are qualified, as in `@noise::hash`. Every overload after the first is printed with a number, as in `@mix.1`.
+
+## Functions
+
+```ir
+fn @tint(location 0 Flat u32) -> Out [color 0] export Fragment
+fn @main(storage 0 &storage [array; _]f32x4, constant 1 &constant f32) -> () export Compute 64 1 1
+fn @fold(u32) -> u32 import
+fn @sin[T: Floating, N: u32]([vector; N]T) -> [vector; N]T export opcode 40
+fn @lerp[f32, 4](f32x4, f32x4, f32) -> f32x4 internal
+template @lerp[T: Floating, N: u32]([vector; N]T, [vector; N]T, T) -> [vector; N]T export
+```
+
+A signature lists the generic parameters, or the arguments of an instance, followed by the parameter types and the result. The rest of it is made up of these parts:
+
+| Part | Meaning |
+| --- | --- |
+| `[T: Floating, N: u32]` after the name | Generic parameters of a prototype or template: types with a bound such as `Any`, `Floating`, `FloatingVector`, or `FloatingLike`, or `u32` counts. |
+| `[F0: fn(i32) -> i32]` after the name | Parameter taking a function, named by its position among the parameters. Calls pass it no operand. |
+| `[n: u32]` after the name | Value parameter made from a count bound with `const n` in a parameter's type, or from the `const` parameter `n`, after the bracketed ones. Calls pass it no operand. |
+| `const u32` among the parameters | `const` parameter. A template reads it as the `%k` value of its value parameter. |
+| `[2.5]`, `[{ 2.0, 0x1p-1 }]` after the name | Instance for values of other types than `u32`, printed as constants. |
+| `[f32, 4]` after the name | Arguments of an instance of the template with the same name. Instances of an imported template have no body until linked. |
+| `[@twice]` after the name | Instance for the function `twice`, named by its own type. The type of an instance of a template lists its generic arguments, as in `@std::size_of[f32x4]`. |
+| binding before a parameter | Input of an entry point, as in `location 0 Flat`. |
+| `[…]` after the result | Bindings of the fields of the result of an entry point. |
+| `internal`, `export`, `import` | Linkage. Imported functions have no body. |
+| `method` | Method, whose first parameter is `self`. |
+| `Vertex`, `Fragment`, `Compute x y z` | Stage of an entry point, with the workgroup size for compute. |
+| `early_depth_test` | Fragment entry point that runs the depth test first. |
+| `inline`, `noinline` | Function inlined at every call, or never inlined. |
+| `dispatch`, `workgroup`, `simdgroup` | Least uniform region the function may be called from. Missing means `thread`. |
+| `for Vertex,Fragment` | Stages the function may be called from. Missing means every stage. |
+| `opcode n` | Primitive. Calls become instruction `n` on the types of the call. |
+| `file n` | File the function was declared in. |
+
+A function that returns several values returns a tuple, as in `-> (f32, u32)`, and `()` means no result.
+
+Templates are generic functions with a body and are listed after the functions of a module. Their types are written in terms of the generic parameters. Their bodies may use five opcodes that ordinary functions can't.
+
+| Instruction | Meaning |
+| --- | --- |
+| `call.const @f[T, N], a, …` | Call of the template `f` with those arguments, which may be parameters of the caller. |
+| `call.const F0, a, …` | Call of the function passed as `F0`. An instance calls the function bound to it, or evaluates an intrinsic in its place. Through a `const fn` parameter, the call is a compile-time value that `if.const` can test. |
+| `pick.const op, a, …` | Operator `op` whose opcode depends on the kind of scalar of `a`, as `pick.const +` is `iadd` or `fadd`. |
+| `if.const c, %bbT, %bbE` | An `if` decided for each instance. The condition `c` is built from `%k` values, literals, and `const fn` calls. Instances copy only the arm `c` chooses. The PHIs after it are the values of that arm. |
+| `loop.const a, b, s, %bbB` | Runs the body for `a`, `a + s`, … while below `b`, all compile-time values. An instance copies the body once per trip. `break` and `continue` in it belong to the loop around it, values pass between trips through memory, and no PHIs follow it. |
+| `%i = trip.const` | The trip of the innermost `loop.const`, at the top of its body. |
+
+A literal whose type is a parameter is stored in every form an instance might need and prints as an `f32` or as an integer.
+
+### Bindings
+
+| Binding | Allowed on | Meaning |
+| --- | --- | --- |
+| `attribute n` | vertex inputs | Vertex attribute `n`. |
+| `location n` | fragment inputs, vertex outputs | Varying `n`, with `Flat` or `NoPerspective` after it unless smooth. |
+| `color n` | fragment outputs | Color attachment `n`, with `index 1` after it for the second source of dual-source blending. |
+| `storage n` | bound globals | Storage buffer, read as a `&storage` reference. |
+| `constant n` | bound globals | Constant buffer, read as a `&constant` reference. |
+| `image n` | bound globals | Storage image. |
+| `texture n` | bound globals | Texture or sampled texture. |
+| `sampler n` | bound globals | Sampler, in Vulkan and Metal. |
+| `builtin name` | outputs | `position` from a vertex entry point or `frag_depth` from a fragment entry point. |
+
+### Builtins
+
+Builtins are read with the `input` instruction.
+
+| Builtin | Type | Stages |
+| --- | --- | --- |
+| `position` | `f32x4` | fragment |
+| `vertex_index`, `instance_index` | `i32` | vertex |
+| `front_facing` | `b32` | fragment |
+| `global_invocation_id`, `local_invocation_id`, `workgroup_id`, `num_workgroups` | `u32x3` | compute |
+| `local_invocation_index`, `simdgroup_id`, `simdgroup_count` | `u32` | compute |
+| `simdgroup_lane`, `simdgroup_size` | `u32` | every stage |
+
+## Types
+
+| Type | Meaning |
+| --- | --- |
+| `b8`, `b16`, `b32` | Booleans, 8, 16, or 32 bits wide in memory and the same everywhere else. |
+| `i8`, `i16`, `i32`, `i64` | Signed integers. |
+| `u8`, `u16`, `u32`, `u64` | Unsigned integers. |
+| `f16`, `f32` | Floats. |
+| `f32x4` | Vector of 2 to 4 lanes. |
+| `f32x4x3` | Matrix of 4 columns of 3 rows, of floats. |
+| `[array; 8]T` | Array. |
+| `[array; _]T` | Unsized array, inside buffers. |
+| `[table; E]T` | Table keyed by the enum `E`. |
+| `Name` | Struct or enum. |
+| `(T, U)` | Tuple. `()` is the empty tuple. |
+| `fn(T) -> R` | Function. |
+| `&space T` | Reference to a `T` in `thread`, `workgroup`, `storage`, or `constant` memory. |
+| `[image; 2]f32` | Storage image of 1, 2, or 3 dimensions, or 6 for a cube. |
+| `[sampled; 2]f32` | Sampled texture. |
+| `[texture; 2]f32` | Texture without a sampler, in every form of a sampled texture. |
+| `sampler` | Sampler. |
+| `[layer; 4][image; 2]f32` | Layered image with 4 layers, or `[layer; _][image; 2]f32` for any number. |
+| `[texture; 2][array; 4]f32` | Multisampled texture with 4 samples, or `[texture; 2][array; _]f32` for any number. Sampled textures have no samples. |
+| `T`, `[vector; N]T` | Generic parameter of the function, in place of a scalar or a count. |
+
+## Blocks and values
+
+A function body starts with `%bb0(%r1, …)`. The arguments of that block are the function's parameters. In a template, the value parameters come first as `%k0`, `%k1`, …, in the order of the generic list and typed by their values. The parameters calls pass follow them. `%k` values are known at compile time and can be tested by `if.const` and `loop.const`. Making an instance replaces them with the bound constants. The blocks nested in an `if` or `loop` are printed after it under their own labels. A label for the code that follows the `if` or `loop` comes after them. A block that ends in `br` is followed directly by the block it branches to. Every block in the source becomes a block of its own in the IR.
+
+| Form | Meaning |
+| --- | --- |
+| `%bbN` | Block. |
+| `%rN` | Value. `%r0` is none. |
+| `$…` | Literal, or a constant index or exponent at the end of an instruction. |
+| `@name` | Function or global. |
+
+Literals are operands, not instructions, and can be used anywhere in their function. Integers and enumerators print in decimal and bools as `true` or `false`. Floats print with `.0` when they're whole and in hex otherwise, as in `$0x1.8p-1`.
+
+Fast-math flags are set per block, not per instruction. They apply to the instructions directly in that block:
+
+```ir
+%bb4 fast(nonans, noinfs, nosignedzero):
+```
+
+The flags are `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, and `nosignedzero`.
+
+## Control flow
+
+All control flow is structured. Every block ends in exactly one jump. Values aren't passed through jumps but merged by PHIs at the start of a block.
+
+| Instruction | Meaning |
+| --- | --- |
+| `if c, %bbT, %bbE` | Runs the then or the else arm on the `b32` scalar `c`. |
+| `loop %bbB` | Runs the body until it breaks. |
+| `yield %bbN` | Ends an arm of an `if` and continues after it. |
+| `br %bbN` | Ends the block and continues in block `N`, which nothing else jumps to. Values from before the `br` are in scope there. |
+| `break %bbN, $k` | Leaves the innermost loop by break edge `k`. |
+| `continue %bbB, $k` | Starts the next trip of the innermost loop by continue edge `k`. |
+| `return v, …` | Returns the result, or the elements of a tuple result. Entry points with outputs return the result struct. |
+| `kill` | Kills the current thread without writing its outputs. |
+| `%r = phi a, b, …` | Merges a value from each edge into the block. |
+
+A PHI after an `if` has an operand for the then arm and one for the else arm. A PHI at the top of a loop body has the value from before the loop, followed by one operand for each continue edge in order, and a PHI after a loop has one for each break edge in order. When an edge no longer leads to the block, its operand is none.
+
+Every `if` and `loop` creates a region whose uniformity is printed after the opcode, as in `if.thread` or `loop.workgroup`. It's left off when the region is `simdgroup`. From most to least uniform, the rungs are `dispatch`, `workgroup`, `simdgroup`, and `thread`.
+
+## Instructions
+
+Opcodes ending in `.const` are compile time. Making an instance resolves every one of them: `call.const` becomes a `call` of the instance and `trip.const` the number of the trip. The same pass resolves the `if.const` an ordinary function is built with, from a `const if` on the variable of a `const for` over known values. Opcodes ending in `.virt` exist only in Shokado IR, and lowering for a target replaces them before code is generated, as `member.virt` becomes comparisons. No code generator ever sees either kind. The verifier allows `.const` opcodes only in templates.
+
+The operands of arithmetic, bitwise, and logic instructions have the type of the result. When an instruction has two or more operands, any of them can also be a scalar of the lane type. Signed and unsigned integers share opcodes except where the bits of the result differ.
+
+### Arithmetic
+
+| Instruction | Meaning |
+| --- | --- |
+| `iadd a, b`, `fadd a, b` | `a + b`. |
+| `isub a, b`, `fsub a, b` | `a - b`. |
+| `imul a, b`, `fmul a, b` | `a * b`, lane by lane, on matrices too. |
+| `idiv a, b`, `udiv a, b`, `fdiv a, b` | `a / b`. Integer division truncates toward zero. |
+| `irem a, b`, `urem a, b`, `frem a, b` | Remainder with the sign of `a`, as `a - b * trunc(a / b)`. |
+| `ineg a`, `fneg a` | `-a`. |
+| `imin`, `umin`, `fmin`, `imax`, `umax`, `fmax` | Smaller or larger of `a` and `b`. |
+| `iabs a`, `fabs a` | Absolute value. |
+| `fsign a` | `-1.0`, `0.0`, or `1.0` by the sign of `a`. |
+| `ffloor a`, `ftrunc a` | Rounding down and toward zero. |
+| `fma a, b, c` | `a * b + c`. |
+| `fcanonicalize a` | `a` as a float operation would return it. Left by the algebraic simplifier where an operation such as `-(-a)` is removed. |
+| `powi.virt a, $n` | `a` multiplied by itself `n` times, with `n` at least 0. Square matrices are multiplied as matrices. |
+| `iaddc a, b` | Two results: `a + b` and the carry as 0 or 1. |
+| `isubb a, b` | Two results: `a - b` and the borrow as 0 or 1. |
+| `imule a, b`, `umule a, b` | Two results: the low and the high half of the product at twice the width. |
+
+### Math
+
+These are the functions of GLSL.std.450 and the float functions Metal and Direct3D 12 have beyond them. Their operands have the type of the result. Unlike the arithmetic instructions, scalars aren't spread. Floats are 16 or 32 bits wide and integers 32 bits.
+
+| Instruction | Meaning |
+| --- | --- |
+| `fround a`, `froundeven a`, `fceil a` | Rounding to nearest with halves either way, to nearest with halves to even, and up. |
+| `ffract a` | `a - ffloor a`. |
+| `isign a` | `-1`, `0`, or `1` by the sign of `a`. |
+| `fclamp x, lo, hi`, `uclamp x, lo, hi`, `iclamp x, lo, hi` | `x` limited to `lo` through `hi`. |
+| `fmix a, b, t` | `a * (1 - t) + b * t`. |
+| `fstep edge, x` | `0.0` where `x < edge` and `1.0` elsewhere. |
+| `fsmoothstep lo, hi, x` | Hermite curve from `0.0` at `lo` to `1.0` at `hi`. |
+| `fradians a`, `fdegrees a` | Degrees to radians and back. |
+| `fsin`, `fcos`, `ftan`, `fasin`, `facos`, `fatan` | Trigonometric functions and their inverses, in radians. |
+| `fsinh`, `fcosh`, `ftanh`, `fasinh`, `facosh`, `fatanh` | Hyperbolic functions and their inverses. |
+| `fatan2 y, x` | Angle of the point `(x, y)`, from `-π` to `π`. |
+| `fpow a, b` | `a` raised to `b`. |
+| `fexp a`, `fexp2 a`, `flog a`, `flog2 a` | `e` or `2` raised to `a`, and the logarithms in those bases. |
+| `fsqrt a`, `frsqrt a` | Square root and its reciprocal. |
+| `fexp10 a`, `flog10 a` | 10 raised to `a`, and the logarithm in base 10. |
+| `fsinpi a`, `fcospi a`, `ftanpi a` | `fsin`, `fcos`, and `ftan` of `π * a`. |
+| `fsincos a` | Two results: the sine and the cosine of `a`. |
+| `fsaturate a` | `a` limited to `0.0` through `1.0`. |
+| `fmin3 a, b, c`, `fmax3 a, b, c`, `fmed3 a, b, c` | Smallest, largest, or middle of three. |
+| `fnextafter a, b` | The next float after `a` toward `b`, or `b` when they are equal. |
+| `fmodf a` | Two results: the fraction and the whole part, both with the sign of `a`. |
+| `ffrexp a` | Two results: the significand from `0.5` up to `1.0` and the exponent in `i32` lanes. |
+| `fldexp a, e` | `a` times 2 raised to `e`, which has `i32` lanes. |
+| `filogb a` | The exponent of `a` in `i32` lanes, counting subnormals, with the least `i32` for zero and NaN and the greatest for infinities. |
+| `ilsb a` | Bit number of the lowest set bit, or `-1` for zero. |
+| `imsb a`, `umsb a` | Bit number of the highest bit unlike the sign bit, or of the highest set bit. `-1` where there is none. |
+
+### Bits
+
+| Instruction | Meaning |
+| --- | --- |
+| `band a, b`, `bor a, b`, `bxor a, b`, `bnot a` | Bitwise and, or, xor, and not. |
+| `ishl a, b` | `a` shifted left by `b`. |
+| `ishr a, b`, `ushr a, b` | `a` shifted right by `b`, copying the sign bit or filling with zeros. |
+| `bfi base, insert, offset, count` | `base` with `count` bits from `offset` replaced by the low bits of `insert`. |
+| `ibfe base, offset, count`, `ubfe base, offset, count` | `count` bits of `base` from `offset`, sign or zero extended. |
+
+### Integer math
+
+These are the integer functions Metal and Direct3D 12 have beyond GLSL.std.450. Operands have the type of the result and scalars aren't spread. Integers are 8, 16, or 32 bits wide. The 24-bit products are 32 bits wide.
+
+| Instruction | Meaning |
+| --- | --- |
+| `bcount a` | Number of set bits. |
+| `brev a` | The bits in reverse order. |
+| `iclz a`, `ictz a` | Number of zeros above the highest set bit or below the lowest, or the width for zero. |
+| `irotate a, n` | `a` rotated left by `n` modulo the width. |
+| `iaddsat a, b`, `uaddsat a, b`, `isubsat a, b`, `usubsat a, b` | `a + b` and `a - b` held at the limits of the type. |
+| `imadsat a, b, c`, `umadsat a, b, c` | `a * b + c` held at the limits of the type. |
+| `iabsdiff a, b`, `uabsdiff a, b` | Distance between `a` and `b`, in the unsigned type of their width. |
+| `ihadd a, b`, `uhadd a, b`, `irhadd a, b`, `urhadd a, b` | `(a + b) >> 1` and `(a + b + 1) >> 1`, without overflow. |
+| `imulhi a, b`, `umulhi a, b` | High half of the product at twice the width. |
+| `imadhi a, b, c`, `umadhi a, b, c` | That high half plus `c`. |
+| `imul24 a, b`, `umul24 a, b`, `imad24 a, b, c`, `umad24 a, b, c` | Product of operands in 24 bits, plus `c`. Operands outside 24 bits give any product. |
+| `imad a, b, c` | `a * b + c`. |
+| `imin3`, `umin3`, `imax3`, `umax3`, `imed3`, `umed3` | Smallest, largest, or middle of three. |
+
+### Comparison and logic
+
+A comparison gives a `b32` with the lanes of the wider operand. Enums and domains are compared with the comparisons of the type underneath them.
+
+| Instruction | Meaning |
+| --- | --- |
+| `ieq`, `feq`, `beq` | `a == b`. |
+| `ine`, `fne`, `bne` | `a != b`. `fne` is true when either is NaN. |
+| `ilt`, `ult`, `flt` | `a < b`. |
+| `ileq`, `uleq`, `fleq` | `a <= b`. |
+| `igt`, `ugt`, `fgt` | `a > b`. |
+| `igeq`, `ugeq`, `fgeq` | `a >= b`. |
+| `isnan`, `isinf`, `isfinite`, `isnormal` | Classification of each lane of a float. |
+| `land a, b`, `lor a, b`, `lnot a` | Logical and, or, and not on booleans of one width. |
+| `any v`, `all v` | Whether any or every lane of a `b32` vector is true. |
+| `select c, a, b` | `a` where `c` is true and `b` elsewhere, lane by lane. `c` is a `b32` scalar or has the lanes of the result. |
+
+### Vectors, matrices, and aggregates
+
+| Instruction | Meaning |
+| --- | --- |
+| `idot a, b`, `fdot a, b` | Dot product of two vectors. |
+| `dot4addi8 a, b, c`, `dot4addu8 a, b, c` | `c` plus the dot product of the four signed or unsigned bytes of the `u32`s `a` and `b`. |
+| `fdot2add a, b, c` | `c`, an `f32`, plus the dot product of two `f16x2`. |
+| `msad r, s, c` | `c` plus the differences of the bytes of the `u32`s `r` and `s` where the byte of `r` isn't zero. |
+| `cross a, b` | Cross product of two float vectors of 3 lanes. |
+| `mmul a, b` | Matrix product of a matrix and a vector, a vector and a matrix, or two matrices. |
+| `mtranspose m` | Transposed matrix. |
+| `mdeterminant m`, `minverse m` | Determinant and inverse of a square float matrix. |
+| `flength v`, `fdistance a, b` | Length of a float vector and distance between two points, as scalars. |
+| `fnormalize v` | `v` scaled to length 1. |
+| `ffaceforward n, i, nref` | `n` where `fdot nref, i` is negative and `-n` elsewhere. |
+| `freflect i, n` | `i` reflected about the normal `n`. |
+| `frefract i, n, eta` | `i` refracted through a surface with normal `n` and ratio of indices `eta`, a scalar. Zero for total internal reflection. |
+| `construct a, …` | Vector from scalars and vectors whose lanes add up, or matrix, array, or struct from every member in order. |
+| `extract v, $k`, `extract v, i` | Member `k` of a vector, matrix, array, or struct, or element `i` of anything but a struct. |
+| `insert v, x, $k`, `insert v, x, i` | `v` with that member replaced by `x`. |
+| `shuffle v, $wzyx` | Vector of the named lanes of `v`. |
+
+### Conversion
+
+| Instruction | Meaning |
+| --- | --- |
+| `convert a` | Value converted to the scalar type of the result, lane by lane. Vectors have the same lanes and matrices the same columns and rows. Enums and domains convert to and from scalars. Numbers never convert to booleans. |
+| `bitcast a` | The same bits as an integer or float scalar or vector type of the same size. |
+| `packsnorm4x8 v`, `packunorm4x8 v` | `f32x4` to `u32`, each lane clamped and scaled to 8 signed or unsigned normalized bits. |
+| `packsnorm2x16 v`, `packunorm2x16 v`, `packhalf2x16 v` | `f32x2` to `u32`, each lane as 16 normalized bits or as an `f16`. |
+| `unpacksnorm4x8 w`, `unpackunorm4x8 w`, `unpacksnorm2x16 w`, `unpackunorm2x16 w`, `unpackhalf2x16 w` | `u32` back to `f32x4` or `f32x2`. |
+| `packunorm10a2 v`, `packsnorm10a2 v` | `f32x4` to `u32`, with 10 bits for each of the first three lanes and 2 for the last. |
+| `packunorm565 v` | `f32x3` to the low 16 bits of a `u32`, with 5, 6, and 5 bits. |
+| `packsrgb4x8 v` | `f32x4` to `u32` as `packunorm4x8` does, with the first three lanes encoded as sRGB. |
+| `unpackunorm10a2 w`, `unpacksnorm10a2 w`, `unpackunorm565 w`, `unpacksrgb4x8 w` | `u32` back to `f32x4` or `f32x3`. |
+| `pack8 v`, `packclampu8 v`, `packclamps8 v` | Four 32-bit integer lanes to a byte each of a `u32`, cut to the low 8 bits or clamped to `0` through `255` or `-128` through `127` first. |
+| `unpacku8 w`, `unpacks8 w` | The bytes of a `u32` to four 32-bit lanes, zero or sign extended. |
+| `packhalf a`, `unpackhalf w` | `f32` lanes to the `f16` bits in the low half of `u32` lanes, and back. |
+
+Packing puts the first lane in the lowest bits.
+
+### Domains
+
+Values of a domain type can be any value of the type underneath it, as `convert` gives from a plain number. These two ask where it falls among the values the domain lists.
+
+| Instruction | Meaning |
+| --- | --- |
+| `member.virt a` | Whether `a` is one of the values of its domain, as a `b32`. |
+| `rank.virt a` | Position of `a` among the values of its domain in ascending order, as a `u32`. A value outside the domain gives any position. |
+
+### Memory
+
+| Instruction | Meaning |
+| --- | --- |
+| `alloca` | Local of the result type, as a `&thread` reference. |
+| `global @name` | Reference to a global, in `constant` or `workgroup` memory, or in `storage` or `constant` memory for a bound buffer. A bound image, texture, or sampler gives the handle itself. |
+| `input name` | Builtin of the entry point. |
+| `access p, $k`, `access p, i` | Reference to a member or element of what `p` refers to, in the same memory. |
+| `load p` | Value behind `p`. |
+| `store p, v` | Writes `v` behind `p`, which is not in constant memory. |
+
+### Images
+
+| Instruction | Meaning |
+| --- | --- |
+| `imgload img, coord`, `imgload img, coord, n` | Texel at `coord`, given as `i32` with one lane per coordinate. Texels are always a four component vector type with the same scalar type as the image. `n` is the sample of a multisampled texture, or the level of a texture or sampled texture, which is 0 without it. Storage images are read at the level of their binding. Textures and sampled textures cannot be cubes. |
+| `imgstore img, coord, texel`, `imgstore img, coord, texel, sample` | Writes a texel to a storage image. |
+| `layer img, $k`, `layer img, i` | One layer of a layered image. |
+| `sampled tex, smp` | Sampled texture of the same form as the texture, combined with the sampler. |
+| `sample img, coord, $mask, …` | Filtered sample of a sampled texture at `coord`, given as `f32` with one lane per coordinate, at the level its derivatives choose. `$mask` says which operands follow, in this order: `1` a bias, `8` a texel offset, and `128` the coarsest level allowed. The bits are those of SPIR-V image operands. |
+| `samplelod img, coord, $mask, …` | Filtered sample at a level given by `2` a level or `4` two gradients, followed by `8` an offset and, with gradients, `128` the coarsest level. |
+| `gather img, coord, $c, $mask, …` | Component `c`, from 0 to 3, of the four texels the bilinear filter would read, with `8` one offset or `32` four as `[array; 4]i32x2`. |
+| `querylod img, coord` | The level a sample at `coord` would use, clamped to the levels of the texture, and the level before clamping, as two `f32`. |
+| `querysize img`, `querysize img, level` | Size of `img` at `level`, or at level 0 without it, as `u32` with one lane per dimension and two for cubes. Layered images add the number of layers as one more lane, counted in cubes for layered cubes. Storage images and multisampled textures have no level argument. |
+| `querylevels img` | Number of levels of a texture or sampled texture, as a `u32`. |
+| `querysamples img` | Number of samples of a multisampled texture or storage image, as a `u32`. |
+| `samplecmp img, coord, ref, $mask, …` | Fraction of the texels a `sample` would read that pass a comparison with `ref`, filtered like a sample, as an `f32`. The operands are those of `sample`. Comparisons are limited to `f32` textures in 2D and cubes. |
+| `samplecmplod img, coord, ref, $mask, …` | The same at a level given as for `samplelod`. |
+| `gathercmp img, coord, ref, $mask, …` | Results of comparing `ref` with each of the four texels a `gather` would read, as `0.0` or `1.0` in an `f32x4`. Offsets are given as for `gather`. |
+| `sparsesample`, `sparsesamplelod`, `sparsegather`, `sparsesamplecmp`, `sparsesamplecmplod`, `sparsegathercmp` | The same as the instruction without `sparse` plus a second `b32` result that is true when every texel read was resident. |
+
+### Derivatives
+
+| Instruction | Meaning |
+| --- | --- |
+| `dpdx a`, `dpdy a` | Derivative of a float across the pixels of a quad, horizontally or vertically. |
+| `dpdxfine a`, `dpdyfine a` | The same between neighboring pixels. |
+| `dpdxcoarse a`, `dpdycoarse a` | The same once for the whole quad. |
+| `fwidth a` | Sum of the absolute derivatives in both directions. |
+| `fwidthfine a`, `fwidthcoarse a` | The same from the fine or coarse derivatives. |
+
+### Calls
+
+| Instruction | Meaning |
+| --- | --- |
+| `call @f, a, …` | Call of a function with a body or of an import. Functions with a tuple result give one value per element. |
+
+### Other
+
+| Instruction | Meaning |
+| --- | --- |
+| `demote` | Demotes the current thread to a helper thread. Its outputs and later writes to memory are thrown away. Doesn't end the block. |
+| `undef` | Value of the result type with no defined contents. |
+| `nop` | No operation, left by passes until the block is compacted. |
+
+## Effects
+
+Every instruction is pure, convergent, or impure. Passes are written against the effect rather than the opcode. The derivatives from `dpdx` to `fwidth` are convergent and never moved into or out of control flow. The same goes for `sample`, `samplecmp`, and `querylod`, whose level comes from derivatives. `store`, `imgstore`, and the control flow instructions are impure. A `call` has the effects of its callee. Calls to imports are impure because an import has no body to look at, and so is `call.const`, which has no callee until it's copied. Everything else is pure.
+</script>
+</body>
+</html>

@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Bento Shading Language</title>
+	<meta name="description" content="Bento: a shading language built on Shokado, with uber shaders, uniformity analysis, automatic barriers, context parameters, and generics.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+
+<main class="home">
+<div class="wrap">
+
+<div class="hero code">
+	<div class="pitch">
+	<h1>A shading language that understands the GPU.</h1>
+	<p class="lede">Bento is a fresh take on what a shading language could look like if we got to start over and actually learnt from past mistakes. It compiles to Shokado IR and inherits every target, tool, and optimization <a href="index.html">Shokado</a> has.</p>
+	<p class="go"><a href="language.html">Language tour</a> <a href="start.html">Getting started</a> <a href="uber.html">Uber shaders</a></p>
+	</div>
+	<figure class="code"><pre data-lang="bento">enum Model { Lambert, Phong, Toon }
+domain SampleCount : u32 { 1, 2, 4, 8 }
+domain PassCount : u32 { 1..=4 }
+
+feature Lighting {
+	Shadows:  b32,
+	Cascades: b32 requires Shadows,
+	Specular: b32,
+}
+
+feature Quality {
+	Shading: Model,
+	Samples: SampleCount,
+	Passes:  PassCount requires Passes == 1 || Lighting.Shadows,
+}</pre></figure>
+</div>
+
+<div class="section-head" id="language">
+	<h2>Language</h2>
+	<p>Barriers, subgroups, uniformity, and uber shaders are concepts built into the language rather than thinly typed intrinsics and macros bolted onto C. <a href="language.html">Language tour</a>, <a href="uber.html">Uber shaders</a></p>
+</div>
+<div class="tray">
+	<div class="cell wide">
+		<h3>Uber shaders</h3>
+		<p>Features are declared once and read as constants anywhere. Bento checks every variant the <code>requires</code> clauses allow when the source is compiled and builds exactly those variants, from IR that is compiled only once.</p>
+	</div>
+	<div class="cell">
+		<h3>Uniformity analysis</h3>
+		<p>Bento proves how widely every value is shared and checks derivatives, simdgroup operations, and bindless indices against it.</p>
+	</div>
+	<div class="cell">
+		<h3>Automatic barriers</h3>
+		<p>Bento inserts a barrier wherever workgroup memory written by one thread is read by another.</p>
+	</div>
+	<div class="cell">
+		<h3>Context parameters</h3>
+		<p>Built-in values are available at any depth of the call chain through checked <code>with</code> clauses, without any globals.</p>
+	</div>
+	<div class="cell">
+		<h3>Generics</h3>
+		<p>Generics have built-in bounds and structural interfaces, are type checked once, and can be exported through bytecode.</p>
+	</div>
+	<div class="cell">
+		<h3>Memory spaces</h3>
+		<p>Every reference type includes its memory space. Buffers and workgroup memory can be passed to functions.</p>
+	</div>
+	<div class="cell wide">
+		<h3>Floating point that works</h3>
+		<p>Arithmetic is strict IEEE 754 by default and can be loosened with <a href="floats.html">math flags</a> for any block, any function, or the whole shader.</p>
+	</div>
+</div>
+
+<div class="section-head" id="compare">
+	<h2>Comparison with GLSL, HLSL, WGSL, and Slang</h2>
+</div>
+<div class="tray">
+	<div class="cell full">
+		<div class="table">
+		<table>
+			<thead>
+				<tr><th></th><th>Bento</th><th>Slang</th><th>GLSL, HLSL, WGSL</th></tr>
+			</thead>
+			<tbody>
+				<tr><td>Output</td><td>Lowered by Shokado straight to SPIR-V, AIR, DXIL, or GLSL</td><td>SPIR-V directly, DXIL through DXC, and MSL, HLSL, GLSL, or WGSL source</td><td>glslang, DXC, Tint, or a transpiler in between</td></tr>
+				<tr><td>Reuse</td><td>Modules, imports, and a linker</td><td>Modules, precompiled modules, and <code>#include</code></td><td><code>#include</code></td></tr>
+				<tr><td>Variants</td><td>Features with checked <code>requires</code> clauses, <code>const if</code>, <code>const for</code>, and generics</td><td>Generics, interfaces, link-time specialization, and preprocessor macros</td><td>Preprocessor macros</td></tr>
+				<tr><td>Uniformity</td><td>Proven for every value and checked across modules</td><td>Opt-in checks of values marked <code>dynamic_uniform</code> by hand</td><td>Unchecked in GLSL and HLSL but checked for derivatives and barriers in WGSL</td></tr>
+				<tr><td>Barriers</td><td>Inserted automatically</td><td>Written by hand</td><td>Written by hand</td></tr>
+				<tr><td>Built-ins</td><td>Context parameters checked per stage</td><td>Semantics as in HLSL</td><td>Globals or semantics</td></tr>
+				<tr><td>Buffers in functions</td><td>References with a memory space</td><td>Resource parameters and pointers</td><td>Not allowed in GLSL</td></tr>
+				<tr><td>Results</td><td>Multiple return values</td><td><code>out</code> parameters and tuples</td><td><code>out</code> parameters</td></tr>
+				<tr><td>Embedding</td><td>One C library without dependencies</td><td>Large C++ code base, with DXC for DXIL</td><td>Large C++ code bases</td></tr>
+				<tr><td>Access</td><td>Every stage public, down to the IR</td><td>Reflection API, IR internal</td><td>Source in, code out</td></tr>
+			</tbody>
+		</table>
+		</div>
+	</div>
+</div>
+
+<div class="section-head" id="rationale">
+	<h2>Rationale</h2>
+</div>
+<div class="tray">
+	<div class="cell full">
+		<p class="quote">&ldquo;What's frustrating about shading languages today is how little of the GPU is actually reflected in the language design.&rdquo;</p>
+		<p>The <a href="why.html">rationale</a> is about the lessons from past mistakes and why Bento is built on infrastructure of its own. Status is on the <a href="roadmap.html">roadmap</a>.</p>
+	</div>
+</div>
+
+</div>
+</main>
+
+</body>
+</html>

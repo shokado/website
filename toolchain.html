@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Tools · Shokado</title>
+	<meta name="description" content="Shokado command line tools: linker, optimizer, code generator, disassembler, validator, and stripper.">
+	<link rel="stylesheet" href="style.css">
+	<script src="site.js" defer></script>
+</head>
+<body>
+<noscript><p class="wrap">This page is written in Markdown and needs JavaScript to render.</p></noscript>
+<script type="text/markdown">
+# Tools
+
+The tools of Shokado work on modules from any frontend:
+
+skd-link
+: Links modules together. Imports that none of the given modules export are left for a later link.
+skd-opt
+: Runs every pass of the optimizer and counts the changes each one makes.
+skd-llc
+: Generates SPIR-V, AIR, DXIL, or GLSL from a module, or C source that rebuilds the module through the library.
+skd-dis
+: Disassembles bytecode to IR text.
+skd-val
+: Validates modules and reports only the first problem in each one.
+skd-strip
+: Strips the file table and every location from a module.
+
+Bento adds its own [compiler and language server](compiler.html).
+
+Any file can be given as `-` to read from stdin or write to stdout. Every tool prints its options with `--help` and exits with 0 on success, 1 after a reported failure, and 2 for a bad command line.
+
+## Example with two modules
+
+The example has two modules. The first is a library that exports a constant and two functions:
+
+```bento tone.bento
+/// Tone mapping, shared by every post pass.
+module tone;
+
+import std;
+
+/// Rec. 709 luma weights.
+export const LUMA = f32x3 { 0.2126, 0.7152, 0.0722 };
+
+export fn luma(c: f32x3) -> f32 {
+	return std::dot(c, LUMA);
+}
+
+/// Narkowicz's fit of the ACES filmic curve.
+export fn aces(x: f32x3) -> f32x3 {
+	let a = x * (x * 2.51 + 0.03);
+	let b = x * (x * 2.43 + 0.59) + 0.14;
+	return std::clamp(a / b, f32x3 { 0, 0, 0 }, f32x3 { 1, 1, 1 });
+}
+```
+
+The second is a shader that imports `tone`. It has two entry points: a compute shader that grades a buffer of pixels and a fragment shader that draws in gray.
+
+```bento post.bento
+import std;
+import tone;
+
+struct Frame {
+	[[storage(0)]]  pixels:   [array; _]f32x4,
+	[[constant(1)]] exposure: f32,
+}
+
+[[stage(.Compute), workgroup_size(64)]]
+fn grade(cs: Frame) with (t: Thread) {
+	let c = cs.pixels[t.global.x];
+	cs.pixels[t.global.x] = f32x4 { ...tone::aces(c.rgb * cs.exposure), c.a };
+}
+
+struct Input {
+	[[location(0)]] color: f32x3,
+}
+
+struct Output {
+	[[color(0)]] color: f32x4,
+}
+
+[[stage(.Fragment)]]
+fn gray(fs: Input) -> Output {
+	let y = std::sqrt(tone::luma(fs.color));
+	return { f32x4 { y, y, y, 1.0 } };
+}
+```
+
+### Compiling
+
+Each module is compiled on its own against the bytecode of the modules it imports. `bento-c` looks for an import as `name.sbc` in the current directory or along each `-i` path.
+
+```sh
+bento-c tone.bento
+bento-c post.bento
+```
+
+`skd-llc` won't generate code for a module that still has unresolved imports:
+
+```text skd-llc post.sbc --entry=gray
+post.sbc: error: 'tone::luma' is imported and cannot be called until the module that exports it is linked
+```
+
+### Linking
+
+```sh
+skd-link -o program.sbc post.sbc tone.sbc std.sbc
+```
+
+The linker prefixes names with the name of their module. Structs and enums merge by qualified name and have to match.
+
+### Optimizing
+
+```sh
+skd-opt program.sbc -o opt.sbc
+```
+
+### Generating code
+
+`--opt` runs the optimizer again after a target lowers what it has no instruction for:
+
+```sh
+skd-llc opt.sbc --opt --entry=grade -o grade.comp
+skd-llc opt.sbc --opt --entry=gray -o gray.frag
+skd-llc opt.sbc --opt --target=spirv --env=vulkan1.3 --entry=grade -o grade.spv
+skd-llc opt.sbc --opt --target=air --env=ios17 --entry=grade -o grade.metallib
+skd-llc opt.sbc --opt --target=dxil --entry=grade -o grade.dxil
+```
+
+### Checking, inspecting, and stripping
+
+```sh
+skd-val tone.sbc post.sbc program.sbc opt.sbc
+skd-dis opt.sbc -o -
+skd-strip opt.sbc -o ship.sbc
+```
+
+### Pipes
+
+Running the same steps through pipes gives byte-identical output:
+
+```sh
+bento-c post.bento -o - | skd-link - tone.sbc -o - | skd-opt - -o - | skd-llc - --opt --entry=gray
+```
+</script>
+</body>
+</html>
