@@ -211,7 +211,7 @@ The operands of arithmetic, bitwise, and logic instructions have the type of the
 | `idiv a, b`, `udiv a, b`, `fdiv a, b` | `a / b`. Integer division truncates toward zero. |
 | `irem a, b`, `urem a, b`, `frem a, b` | Remainder with the sign of `a`, as `a - b * trunc(a / b)`. |
 | `ineg a`, `fneg a` | `-a`. |
-| `imin`, `umin`, `fmin`, `imax`, `umax`, `fmax` | Smaller or larger of `a` and `b`. |
+| `imin`, `umin`, `fmin`, `imax`, `umax`, `fmax` | Smaller or larger of `a` and `b`. A NaN loses to a number, as in `minNum` and `maxNum` of IEEE 754-2008. |
 | `iabs a`, `fabs a` | Absolute value. |
 | `fsign a` | `-1.0`, `0.0`, or `1.0` by the sign of `a`. |
 | `ffloor a`, `ftrunc a` | Rounding down and toward zero. |
@@ -228,7 +228,7 @@ These are the functions of GLSL.std.450 and the float functions Metal and Direct
 
 | Instruction | Meaning |
 | --- | --- |
-| `fround a`, `froundeven a`, `fceil a` | Rounding to nearest with halves either way, to nearest with halves to even, and up. |
+| `fround a`, `fceil a` | Rounding to nearest with halves to even, and up. |
 | `ffract a` | `a - ffloor a`. |
 | `isign a` | `-1`, `0`, or `1` by the sign of `a`. |
 | `fclamp x, lo, hi`, `uclamp x, lo, hi`, `iclamp x, lo, hi` | `x` limited to `lo` through `hi`. |
@@ -356,7 +356,7 @@ Values of a domain type can be any value of the type underneath it, as `convert`
 
 | Instruction | Meaning |
 | --- | --- |
-| `alloca` | Local of the result type, as a `&thread` reference. |
+| `alloca` | Local of the result type, as a `&thread` reference. Every `alloca` of a function opens its body, ahead of any other instruction. |
 | `global @name` | Reference to a global, in `constant` or `workgroup` memory, or in `storage` or `constant` memory for a bound buffer. A bound image, texture, or sampler gives the handle itself. |
 | `input name` | Builtin of the entry point. |
 | `access p, $k`, `access p, i` | Reference to a member or element of what `p` refers to, in the same memory. |

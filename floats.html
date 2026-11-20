@@ -21,6 +21,8 @@ We wanted to solve this in Bento, in large part because precision, or even just 
 
 Bento code follows IEEE 754 unless it says otherwise. A multiply and an add are never fused into an `fma`, operations happen in the order they're written, and NaNs, infinities, and signed zeros are preserved.
 
+Where the targets disagree, Bento picks one answer. `round` rounds halves to even, as `roundEven` does in GLSL and `rint` in Metal: `round(2.5)` is `2.0` and `round(3.5)` is `4.0`. `min`, `max`, and `clamp` follow `minNum` and `maxNum` of IEEE 754-2008, where a NaN loses to a number: `min(x, NaN)` is `x`. `min3` and `max3` do the same. Either zero can come back from `min(-0.0, 0.0)`. For SPIR-V, Shokado writes `NMin` and `NMax` for these outside `.NoNaNs`, and the cheaper `FMin` and `FMax` inside it.
+
 ## Math flags
 
 The `math` attribute loosens the rules for one function or block:
