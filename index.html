@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Shokado Shader Compiler Infrastructure</title>
-	<meta name="description" content="Shokado: shader compiler infrastructure for building shaders and shader tools. An IR, an optimizer, and code generators for SPIR-V, DXIL, AIR, and GLSL in one C library with no dependencies.">
+	<meta name="description" content="Shokado: shader compiler infrastructure. An IR, an optimizer, and code generators for SPIR-V, DXIL, AIR, and GLSL in one C library with no dependencies.">
 	<link rel="stylesheet" href="style.css">
 	<script src="site.js" defer></script>
 </head>
@@ -15,8 +15,8 @@
 
 <div class="hero">
 	<div class="pitch">
-	<h1>Shader compiler infrastructure for building shaders and shader tools.</h1>
-	<p class="lede">Shokado is an IR and a set of tools that lower it directly to what your graphics API requires. The whole infrastructure is one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
+	<h1>Shader compiler infrastructure.</h1>
+	<p class="lede">Shokado is everything between a shading language and your graphics API: an IR, a verifier, a linker, an optimizer, and code generators for SPIR-V, DXIL, AIR, and GLSL. The whole infrastructure is one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
 	</div>
 	<svg class="still" viewBox="0 -24 370 320" aria-hidden="true">
 		<defs>
@@ -69,13 +69,13 @@ fn main(px: Pixel) -&gt; Color {
 
 <div class="section-head" id="targets">
 	<h2>Write once, run anywhere</h2>
-	<p>Shokado IR lowers to SPIR-V, DXIL, AIR, and GLSL with no other compiler in between. <a href="targets.html">Targets</a></p>
+	<p>Shokado generates code for SPIR-V, DXIL, AIR, and GLSL with no other compiler in between. <a href="targets.html">Targets</a></p>
 </div>
 <img class="graphic" src="targets.svg" width="1520" height="680" alt="Bento, or your own language, node graph, or material graph, builds Shokado IR. Shokado IR is lowered to SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5 to 4.6, DXIL for DirectX 12, AIR for Metal 3 and 4, and GLSL for OpenGL 4.5 to 4.6 and OpenGL ES 3.1 to 3.2 as a fallback for OpenGL drivers without SPIR-V support.">
 
 <div class="section-head" id="infrastructure">
 	<h2>Infrastructure</h2>
-	<p>An IR and a set of language agnostic tools that work on it. Bento is a small client on top of all that, much like clang is the C and C++ frontend for LLVM. <a href="toolchain.html">Tools</a>, <a href="ir.html">IR and bytecode</a>, <a href="library.html">Library</a></p>
+	<p>An IR, a verifier, a linker, an optimizer, and code generators, all language agnostic. Bento is a small client on top of all that, much like clang is the C and C++ frontend for LLVM. <a href="toolchain.html">Tools</a>, <a href="ir.html">IR and bytecode</a>, <a href="library.html">Library</a></p>
 </div>
 <div class="tray">
 	<div class="cell">
