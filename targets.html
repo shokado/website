@@ -19,46 +19,27 @@
 | AIR | Metal 3 and 4 on macOS, iOS, tvOS, and visionOS | `air` |
 | DXIL | Direct3D 12 from Shader Model 6.9 | `dxil` |
 | GLSL 4.50, GLSL ES 3.10 | OpenGL drivers without SPIR-V | `glsl` |
+| VM | running the IR on the CPU | `vm` |
 | C | rebuilding a module through the library | `bto` |
 | nothing | checking a module | `null` |
 
-Shokado generates one entry point at a time. None of the targets can pass buffers, workgroup memory, or images to a function. Instead, building and linking copy a function with such parameters once for every set of globals it's called with. Run-time indices into them become extra parameters of the copy. Calls stay calls.
+Shokado generates one entry point at a time for a GPU and the whole module for the VM. None of the targets can pass buffers, workgroup memory, or images to a function. Building and linking copy such a function once for every set of globals it's called with instead, and run-time indices into them become extra parameters of the copy. Calls stay calls.
 
 ## Options
 
-Each option is a flag of `skd-llc` and a field of `SKDGenOptions`. The target itself is `--target=NAME` on the command line and the first argument of `skd_gen` in the library, with GLSL as the default of `skd-llc`.
+Every option is a flag of `skd-llc` and a field of `SKDGenOptions`, and `skd-llc --help` lists them all. They come in three kinds:
 
-| Flag | Field | Targets | What it does |
-| --- | --- | --- | --- |
-| `--entry=NAME` | `entry` | SPIR-V, AIR, DXIL, GLSL | Chooses the entry point to generate. It can be left out when the module has only one. |
-| `--env=NAME` | `environment` | SPIR-V, AIR | Names where the shader runs, from the tables under [SPIR-V](#spir-v) and [AIR](#air-for-metal). SPIR-V defaults to `vulkan1.0` and AIR to `macos14`. |
-| `--spirv=1.N` | `version` | SPIR-V | Writes that version of SPIR-V instead of the default of the environment. The field is `100 + 10 * N`, such as `130` for 1.3. |
-| `--es` | `es` | GLSL | Writes GLSL ES 3.10 with `GL_OES_gpu_shader5` instead of GLSL 4.50. |
-| `--math-flags=FLAGS` | `math_override`, `math_flags` | SPIR-V, AIR, DXIL, GLSL | Replaces the math flags of every block with `FLAGS`, a list of `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, and `nosignedzero` separated by commas. An empty list makes every block strict. |
-| `--vk-combined-image-samplers` | `vk_combined_image_samplers` | SPIR-V for Vulkan | Makes stored sampled textures combined image samplers instead of a sampled image and a sampler joined in the shader. Each one is an index into binding 3 of set 3 followed by 8 bytes of zero, as described under [bindless](#bindless). |
-| `--vk-maintenance8` | `vk_maintenance8` | SPIR-V for Vulkan | Writes a signed `%` as `OpSRem` instead of `a - b * (a / b)`. |
-| `--vk-maintenance9` | `vk_maintenance9` | SPIR-V for Vulkan | Writes `bit_count` and `bitfield_reverse` of 8 and 16 bits directly instead of through 32 bits. |
-| `--vk-shader-integer-dot-product` | `vk_shader_integer_dot_product` | SPIR-V for Vulkan | Writes integer `dot`, `dot4_add_i8`, and `dot4_add_u8` as `OpSDot` and `OpUDot`. Environments from `vulkan1.3` on do so without the option. |
-| `--vk-shader-integer-functions2` | `vk_shader_integer_functions2` | SPIR-V for Vulkan | Writes `add_sat`, `sub_sat`, `abs_diff`, `hadd`, `rhadd`, and 32-bit `leading_zeros` and `trailing_zeros` as the instructions of `SPV_INTEL_shader_integer_functions2`. |
-| `--vk-shader-trinary-minmax` | `vk_shader_trinary_minmax` | SPIR-V for Vulkan | Writes `min3`, `max3`, and `median3` as the instructions of `SPV_AMD_shader_trinary_minmax`. |
-| `--vk-shader-mixed-float-dot-product` | `vk_shader_mixed_float_dot_product` | SPIR-V for Vulkan | Writes `dot2_add` as `OpFDot2MixAcc32VALVE`. |
-| `--vk-shader-float-controls2` | `vk_shader_float_controls2` | SPIR-V for Vulkan | Writes math flags with `SPV_KHR_float_controls2`, as described under [float controls](#float-controls). Environments from `vulkan1.4` on do so without the option. |
-| `--vk-signed-zero-inf-nan-preserve` | `vk_signed_zero_inf_nan_preserve` | SPIR-V for Vulkan | Preserves signed zeros, infinities, and NaNs in strict code, for devices with `shaderSignedZeroInfNanPreserveFloat16`, `32`, and `64`. |
-| `--gl-demote-to-helper-invocation` | `gl_demote_to_helper_invocation` | GLSL, SPIR-V for OpenGL | Writes `demote` directly instead of emulating it, as described under [kill and demote](#kill-and-demote). |
-| `--gl-integer-dot-product` | `gl_integer_dot_product` | GLSL, SPIR-V for OpenGL | Writes integer `dot`, `dot4_add_i8`, and `dot4_add_u8` with `GL_EXT_integer_dot_product`. |
-| `--gl-shader-integer-functions2` | `gl_shader_integer_functions2` | GLSL, SPIR-V for OpenGL | Writes the functions of `--vk-shader-integer-functions2` with `GL_INTEL_shader_integer_functions2`. GLSL has them from 16 bits up. |
-| `--gl-shader-trinary-minmax` | `gl_shader_trinary_minmax` | GLSL, SPIR-V for OpenGL | Writes `min3`, `max3`, and `median3` with `GL_AMD_shader_trinary_minmax`. GLSL has them only at 32 bits. |
-| `--gl-quirk-unpack-unorm4x8` | `gl_quirk_unpack_unorm4x8` | GLSL, SPIR-V for OpenGL | Writes the normalized packs and unpacks as shifts, masks, and arithmetic, for drivers whose `unpackUnorm4x8` loses precision, as described under [driver quirks](#driver-quirks). |
+- What to generate and where it runs: `--entry`, `--env` for the Vulkan, OpenGL, or Apple release, `--spirv=1.N`, and `--es` for GLSL ES.
+- What the device has: `--vk-` and `--gl-` flags named after a feature or an extension, such as `--vk-maintenance9` or `--gl-shader-integer-functions2`. Each one turns off the lowering that stands in for a missing instruction and lets the generator emit the native one. Hosts compiling on the machine the shader runs on fill these in from what the driver reports.
+- `--math-flags`, which replaces the math flags of every block to check a shader strict or fast.
 
-Vulkan makes `OpSRem` poison when either operand is negative unless the device enables the `maintenance8` feature of `VK_KHR_maintenance8`. Only pass `--vk-maintenance8` for devices with the feature enabled. Options for one API are errors in an environment of the other: `--vk-` ones with `--env=opengl4.5` and `--gl-` ones with a Vulkan environment.
-
-GPUs differ in more than the version of the API they report. Some have saturating adds, averages, and three-way minimums as single instructions. Newer drivers lift old limits, such as bit counts that only work on 32-bit integers. The generator options name these extras, like `vk_maintenance9` or `gl_shader_integer_functions2`. Each one turns off the lowering that stands in for a missing instruction and lets the generator emit the native one. Hosts compiling IR on the machine it runs on fill the options in from the extensions the driver reports and generate code tuned for that GPU.
+Options for one API are errors in an environment of the other. Only pass a device option the device really enables. Vulkan makes `OpSRem` poison for negative operands without `maintenance8`, and `--vk-maintenance8` writes it anyway.
 
 ### Driver quirks
 
-Drivers have bugs too, some of them in how they compile a built-in function. The options with `quirk` in their names work around these. Where the other options turn a lowering off, a quirk turns one on and the driver never sees the built-in it mishandles. Drivers can't report their own bugs. Hosts choose the quirks from the vendor and version strings instead.
+Drivers have bugs too. The options with `quirk` in their names turn a lowering on and the driver never sees the built-in it mishandles. Drivers can't report their own bugs. Hosts choose the quirks from the vendor and version strings instead.
 
-`gl_quirk_unpack_unorm4x8` is for NVIDIA's OpenGL drivers as of 615.78.08. When the result of `unpack_unorm4x8` feeds `precise` or `NoContraction` arithmetic, every component comes back rounded to half precision. The quirk writes the normalized packs and unpacks the way GLSL defines them: shifts, masks, conversions, and a divide by 255 for each byte.
+`--gl-quirk-unpack-unorm4x8` is for NVIDIA's OpenGL drivers as of 615.78.08, where `unpack_unorm4x8` feeding `precise` or `NoContraction` arithmetic comes back rounded to half precision. The quirk writes the normalized packs and unpacks with shifts, masks, and a divide by 255.
 
 ## Kill and demote
 
@@ -66,125 +47,58 @@ Shokado emulates whichever one a target doesn't have:
 
 | Target | `kill` | `demote` |
 | --- | --- | --- |
-| SPIR-V for Vulkan | `OpTerminateInvocation`, or `OpKill` before SPIR-V 1.6 | `OpDemoteToHelperInvocation` |
+| SPIR-V for Vulkan | `OpTerminateInvocation`, or `OpKill` before SPIR-V 1.6 | `OpDemoteToHelperInvocation`, with `shaderDemoteToHelperInvocation` |
 | SPIR-V for OpenGL | `OpKill` | emulated |
 | GLSL | `discard` | emulated |
 | AIR | emulated | `discard_fragment` |
 | DXIL | emulated | `discard` |
 
-Demotion in Vulkan requires the `shaderDemoteToHelperInvocation` feature, core from Vulkan 1.3.
-
-Core OpenGL has no way to demote a thread. Threads that demote set a flag instead and run to the end of the entry point. The entry point kills them right before it returns. Writes to storage buffers and images check the flag first and are skipped when it's set. Functions that demote or write receive the flag as a parameter.
-
-When your driver supports demotion, `--gl-demote-to-helper-invocation` uses it directly through `GL_EXT_demote_to_helper_invocation` or `SPV_EXT_demote_to_helper_invocation`. Drivers don't reliably report either one.
-
-Metal and Direct3D 12 only demote. Shokado kills a thread there by demoting it and returning right away. Functions that can kill receive a flag as a parameter that every call checks afterward.
+- OpenGL: a demoted thread sets a flag, skips its writes to storage buffers and images, and is killed when the entry point returns. `--gl-demote-to-helper-invocation` uses the extension on drivers known to have it. Drivers don't report it reliably.
+- Metal and Direct3D 12: a thread is killed by demoting it and returning at once, and calls that can kill check a flag afterward.
 
 ## Bindings
 
-In Shokado every kind of resource is numbered on its own, starting from 0. The shaders Shokado generates expect their resources in three groups: buffers, textures, and samplers. Here's how to set up the bindings in each API:
+Every kind of resource is numbered on its own from 0, and the shaders expect them in three groups: buffers, textures, and samplers.
 
 | Bento | Vulkan | Direct3D 12 | Metal | OpenGL |
 | --- | --- | --- | --- | --- |
-| `constant(n)` | set 0, binding `n` | `register(bn, space0)` | `[[buffer(n)]]` | uniform block at binding `n` |
-| `storage(n)` | set 0, binding `C + n` | `register(un, space0)` | `[[buffer(C + n)]]` | storage block at binding `n` |
-| `texture(n)` | set 1, binding `n` | `register(tn, space1)` | `[[texture(n)]]` | a GLSL sampler at texture unit `n` |
-| `image(n)` | set 1, binding `T + n` | `register(un, space1)` | `[[texture(T + n)]]` | a GLSL image at image unit `n` |
+| `constant(n)` | set 0, binding `n` | `register(bn, space0)` | `[[buffer(n)]]` | uniform block binding `n` |
+| `storage(n)` | set 0, binding `C + n` | `register(un, space0)` | `[[buffer(C + n)]]` | storage block binding `n` |
+| `texture(n)` | set 1, binding `n` | `register(tn, space1)` | `[[texture(n)]]` | texture unit `n` |
+| `image(n)` | set 1, binding `T + n` | `register(un, space1)` | `[[texture(T + n)]]` | image unit `n` |
 | `sampler(n)` | set 2, binding `n` | `register(sn, space2)` | `[[sampler(n)]]` | an error |
 
-`C` and `T` are one more than the highest `constant(n)` and `texture(n)` used by any entry point in the module. With those two counts you know every binding without reflection. Registers in Direct3D 12 are typed by the kind of view and need neither count.
+`C` and `T` are one more than the highest `constant(n)` and `texture(n)` used by any entry point in the module. With those two counts you know every binding without reflection.
 
-### Vulkan
-
-Create your pipeline layout from up to four descriptor set layouts:
-
-- Set 0 contains a `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER` at binding `n` for every `constant(n)` and a `VK_DESCRIPTOR_TYPE_STORAGE_BUFFER` at binding `C + n` for every `storage(n)`.
-- Set 1 contains a `VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER` or `VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE` at binding `n` for every `texture(n)` and a `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` at binding `T + n` for every `image(n)`.
-- Set 2 contains a `VK_DESCRIPTOR_TYPE_SAMPLER` at binding `n` for every `sampler(n)`.
-- Set 3 contains the descriptor arrays of stored handles, as described under [bindless](#bindless).
-
-You can leave set 2 out when no samplers are bound apart from their textures, and set 3 out when no handles are stored. When a set is unused but a later one isn't, give the unused set an empty layout.
-
-### Direct3D 12
-
-Create your root signature with a descriptor table, or root descriptors, for each space:
-
-- Space 0 contains a CBV range from `b0` for every `constant(n)` and a UAV range from `u0` for every `storage(n)`. Root CBVs and root UAVs work in place of the ranges.
-- Space 1 contains an SRV range from `t0` for every `texture(n)` and a UAV range from `u0` for every `image(n)`.
-- Space 2 contains a sampler range from `s0` for every `sampler(n)`.
-
-Direct3D 12 has no combined texture and sampler. Sampled textures bound with `texture(n)` are split into the SRV at `tn` and the sampler at `sn` of space 1. Samplers come from a separate descriptor heap and are bound through separate descriptor tables or as static samplers of the root signature.
-
-Vertex attributes bound with `attribute(n)` become input elements with the semantic name `TEXCOORD` and the semantic index `n`.
-
-### Metal
-
-Set your buffers, textures, and samplers at the indices in the table. The buffers of a vertex descriptor go after the storage buffers.
-
-### OpenGL
-
-In OpenGL every resource is bound at its own number:
-
-| Bento | OpenGL |
-| --- | --- |
-| `constant(n)` | `glBindBufferBase(GL_UNIFORM_BUFFER, n, buffer)` |
-| `storage(n)` | `glBindBufferBase(GL_SHADER_STORAGE_BUFFER, n, buffer)` |
-| `texture(n)` | `glBindTextureUnit(n, texture)`, and `glBindSampler(n, sampler)` for a sampled texture |
-| `image(n)` | `glBindImageTexture(n, texture, level, layered, layer, access, format)` |
-
-In OpenGL, textures and sampled textures both end up as GLSL samplers at a texture unit. A sampler bound apart from its texture is an error.
-
-Numbering every kind from 0 without gaps leaves no holes in the bindings of any API. Bindless handles are stored in buffers and have no numbers.
+- Vulkan: set 3 holds the descriptor arrays of stored handles. Leave out sets nothing uses, and give an unused set before a used one an empty layout.
+- Direct3D 12: a sampled texture at `texture(n)` is the SRV at `tn` and the sampler at `sn` of space 1. Vertex attributes are `TEXCOORD` with index `n`.
+- Metal: the buffers of a vertex descriptor go after the storage buffers.
+- OpenGL: textures and sampled textures both become GLSL samplers at a texture unit, with `glBindSampler(n, ...)` for the sampler of a sampled one.
 
 ## Bindless
 
-The [bindings and bindless](bindless.html) page explains the two models of bindless, *explicit bindless* and *implicit bindless*. This section covers how to set up each API for them.
+The [bindless](bindless.html) page explains *implicit bindless* and *explicit bindless*. Here's what each API needs.
 
-### Implicit bindless
+Every handle stored in a buffer is 8 bytes, and stored sampled textures are 16: the texture, then the sampler.
 
-Every handle stored in a buffer is 8 bytes. What those bytes mean depends on the API:
+| API | Stored handle | Setup |
+| --- | --- | --- |
+| Vulkan with `--vk-descriptor-heap` | a `u32` slot in the resource or sampler heap, then zero | `VK_EXT_descriptor_heap`, from the `vulkan1.1` environment |
+| Vulkan | a `u32` index into the array of its kind in set 3, then zero | runtime arrays of sampled images at binding 0, storage images at 1, samplers at 2, and combined image samplers at 3 with `--vk-combined-image-samplers` |
+| Direct3D 12 | a `u32` slot in the resource or sampler heap, then zero | `CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED` and `SAMPLER_HEAP_DIRECTLY_INDEXED` on the root signature |
+| OpenGL | the handle from `glGetTextureHandleARB` and the like, one combined handle for a sampled texture | every handle made resident before drawing |
+| Metal | the `gpuResourceID` | every texture and sampler made resident |
 
-| API | Stored handle |
-| --- | --- |
-| Vulkan with descriptor heaps | a `u32` slot in the resource heap or the sampler heap, then zero |
-| Vulkan | a `u32` index into the descriptor array for that kind, then zero |
-| Direct3D 12 | a `u32` slot in the resource heap or the sampler heap, then zero |
-| OpenGL | the handle from `glGetTextureHandleARB`, `glGetImageHandleARB`, or `glGetTextureSamplerHandleARB` |
-| Metal | the `gpuResourceID` |
+Where there's a heap, a stored handle and a slot are the same number. Structs bound with `[[constant(n), heap]]` live in the heap itself and constant buffer `n` holds only their starting slot:
 
-Where there's a heap, a stored handle and a slot of explicit bindless are the same number.
-
-Stored sampled textures are 16 bytes, the handle of the texture and then the handle of the sampler. OpenGL has one handle for both from `glGetTextureSamplerHandleARB` followed by 8 bytes of zero. Samplers can't be stored on their own in OpenGL.
-
-- Vulkan: with `--vk-descriptor-heap` on a device with `VK_EXT_descriptor_heap`, stored handles are slots in its heaps. Otherwise the descriptor arrays are sampled images at binding 0, storage images at binding 1, samplers at binding 2, and combined image samplers at binding 3 of set 3, each created as a runtime array with descriptor indexing. With `--vk-combined-image-samplers`, stored sampled textures are an index into the combined image samplers followed by 8 bytes of zero. Heaps have no combined image samplers.
-- Direct3D 12: the slots are in the heaps set with `SetDescriptorHeaps`. Create the root signature with `D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED` and `D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED`.
-- OpenGL: make every handle resident with `glMakeTextureHandleResidentARB` or `glMakeImageHandleResidentARB` before drawing.
-- Metal: create samplers with `supportArgumentBuffers` and make every texture and sampler resident with `useResource` or a residency set.
-
-Stored handles become:
-
-- Vulkan: a slot of `ResourceHeapEXT` or `SamplerHeapEXT` with descriptor heaps, otherwise an index into the descriptor array for its kind, decorated `NonUniform`.
-- Direct3D 12: a handle made with `createHandleFromHeap` and marked non-uniform.
-- OpenGL: a handle converted with `ARB_bindless_texture` in GLSL and with `SPV_NV_bindless_texture` in SPIR-V.
-
-### Explicit bindless
-
-Structs bound with `[[constant(n), heap]]` live in the descriptor heap itself and constant buffer `n` only contains the `u32` slot where they start. Structs of resources go in the resource heap and structs of samplers in the sampler heap. Fields are at consecutive slots in the order they're written, with one slot for every element of an array. The last field can be an array without a length that runs to the end of the heap. Heap structs bound to the same constant buffer share its starting slot. Values converted from `u32` with `as` are slots in the same heaps.
-
-- Direct3D 12: the slots are in the heaps set with `SetDescriptorHeaps`. Create the root signature with `D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED` and `D3D12_ROOT_SIGNATURE_FLAG_SAMPLER_HEAP_DIRECTLY_INDEXED`, and make `bn` of space 0 a root constant. The handle is made with `createHandleFromHeap`.
-- Vulkan: the slots are in the heaps of `VK_EXT_descriptor_heap`, `imageDescriptorSize` bytes apart in the resource heap and `samplerDescriptorSize` bytes apart in the sampler heap. Map binding `n` of set 0 to push data with `VkShaderDescriptorSetAndBindingMappingInfoEXT`, along with every other set and binding of the pipeline. Heaps need `vk_descriptor_heap` and the `vulkan1.1` environment or later for SPIR-V 1.2.
-- Metal 4: the slots are views of an `MTLTextureViewPool` or `MTLResourceViewPool`. Constant buffer `n` contains the pool's `baseResourceID`. Slots converted with `as` count from the `baseResourceID` in the buffer Shokado reserves for it.
-
-Without a heap, constant buffer `n` still contains the starting slot:
-
-- Vulkan without descriptor heaps, and the `vulkan1.0` environment: the slots index the descriptor arrays of implicit bindless.
-- OpenGL and Metal before Metal 4: the slots index a table of handles, a buffer of 8-byte stored handles you fill and bind where Shokado reserves it.
+- Direct3D 12: `bn` of space 0 is a root constant.
+- Vulkan: binding `n` of set 0 maps to push data with `VkShaderDescriptorSetAndBindingMappingInfoEXT`.
+- Metal 4: the slots are views of a view pool and the buffer holds its `baseResourceID`.
+- Without a heap, the slot indexes the descriptor arrays in Vulkan and a table of handles you fill in OpenGL and older Metal.
 
 ## SPIR-V
 
-The SPIR-V version Shokado writes by default, and the newest one it allows, depend on the environment:
-
-| `--env` | Default | Newest allowed |
+| `--env` | Default version | Newest allowed |
 | --- | --- | --- |
 | `vulkan1.0` | 1.0 | 1.0 |
 | `vulkan1.1` | 1.3 | 1.3 |
@@ -193,107 +107,20 @@ The SPIR-V version Shokado writes by default, and the newest one it allows, depe
 | `vulkan1.4` | 1.6 | 1.6 |
 | `opengl4.5` | 1.0, or 1.3 for simdgroup built-ins | 1.3 |
 
-Every buffer is a block with a single member. Storage buffers are laid out with std430 and constant buffers with std140. `b32` values in buffers are stored as `u32`. Capabilities and extensions are only declared when something uses them.
-
-```spirv spirv-dis scale.spv
-               OpCapability Shader
-               OpMemoryModel Logical GLSL450
-               OpEntryPoint GLCompute %main "main" %gl_GlobalInvocationID
-               OpExecutionMode %main LocalSize 64 1 1
-               OpDecorate %_runtimearr_float ArrayStride 4
-               OpDecorate %_struct_9 BufferBlock
-               OpMemberDecorate %_struct_9 0 Offset 0
-               OpDecorate %10 DescriptorSet 0
-               OpDecorate %10 Binding 0
-...
-   %scale_at = OpFunction %void None %50
-         %48 = OpFunctionParameter %uint
-         %49 = OpFunctionParameter %float
-         %51 = OpLabel
-         %52 = OpAccessChain %_ptr_Uniform__runtimearr_float %10 %uint_0
-         %53 = OpAccessChain %_ptr_Uniform_float %52 %48
-         %54 = OpLoad %float %53
-         %55 = OpFMul %float %49 %54
-               OpStore %53 %55
-               OpReturn
-               OpFunctionEnd
-```
-
-`scale_at` has a `&storage [array; _]f32` parameter and is called for two different buffers. Each call goes to its own copy of the function, built on the variable of that buffer. The index is passed in as an ordinary parameter.
+Storage buffers use std430 and constant buffers std140. Capabilities and extensions are only declared when something uses them. A `texture(n)` of a `[sampled; N]T` is a combined image sampler, and one of a `[texture; N]T` is a sampled image the shader joins with a `sampler(n)`.
 
 ### Float controls
 
-When SPIR-V says nothing about float math, Vulkan allows contraction, reassociation, reciprocals, and other transforms on every float instruction, and assumes most of them never see NaNs, infinities, or signed zeros. Shokado IR is strict unless a block has math flags. The SPIR-V has to say so.
+When SPIR-V says nothing, Vulkan lets the driver contract, reassociate, and assume no NaNs or infinities on every float instruction. Shokado IR is strict unless a block has math flags, and the SPIR-V has to say so:
 
-With `SPV_KHR_float_controls2`, the entry point declares a strict `FPFastMathDefault` for each float width and the instructions of blocks with flags are decorated with `FPFastMathMode`. Devices without `shaderSignedZeroInfNanPreserve` allow nothing stricter than `NSZ`, `NotInf`, and `NotNaN`. Those three are part of every mask unless `--vk-signed-zero-inf-nan-preserve` is given.
-
-Older environments have only `NoContraction` and `SignedZeroInfNanPreserve`. `NoContraction` turns off contraction, reassociation, reciprocals, and transforms together. It goes on the arithmetic instructions of every block without `allowtransform`. `SignedZeroInfNanPreserve` is set for the whole entry point when any block leaves out `nonans`, `noinfs`, or `nosignedzero` and the device preserves them. OpenGL has only `NoContraction`.
-
-### Textures and samplers
-
-SPIR-V uses the same `OpTypeImage` type for what OpenGL calls textures and what it calls images. The Sampled operand tells them apart: it's 1 for a texture that's used with a sampler or fetched, and 2 for a storage image that's read and written directly. A texture combined with a sampler is an `OpTypeSampledImage` of a Sampled 1 image.
-
-Each kind of binding is one kind of descriptor, at the set and binding listed under [bindings](#bindings):
-
-| Binding | SPIR-V | Vulkan descriptor | OpenGL |
-| --- | --- | --- | --- |
-| `texture(n)` of a `[sampled; N]T` | `OpTypeSampledImage` | `VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER` | a GLSL sampler, from the texture and the sampler object bound to unit `n` |
-| `texture(n)` of a `[texture; N]T` | `OpTypeImage` with Sampled 1 | `VK_DESCRIPTOR_TYPE_SAMPLED_IMAGE` | the sampler type of a `[sampled; N]T`, read with `texelFetch` only |
-| `sampler(n)` | `OpTypeSampler` | `VK_DESCRIPTOR_TYPE_SAMPLER` | an error |
-| `image(n)` | `OpTypeImage` with Sampled 2 | `VK_DESCRIPTOR_TYPE_STORAGE_IMAGE` | a GLSL image at image unit `n` |
-
-In Vulkan you either write the image view and the sampler to one `VkDescriptorImageInfo`, or make the sampler an immutable sampler of the set layout.
-
-```bento
-struct Shade {
-	[[position]]   at:      f32x4,
-	[[texture(0)]] albedo:  [sampled; 2]f32,
-	[[texture(1)]] normal:  [texture; 2]f32,
-	[[sampler(0)]] nearest: sampler,
-}
-
-let normal = [sampled; 2]f32 { fs.normal, fs.nearest };
-```
-
-```spirv spirv-dis shade.spv
-         %10 = OpTypeImage %float 2D 0 0 0 1 Unknown
-         %11 = OpTypeSampledImage %10
-         %12 = OpVariable %_ptr_UniformConstant_11 UniformConstant
-         %14 = OpVariable %_ptr_UniformConstant_10 UniformConstant
-         %16 = OpTypeSampler
-         %17 = OpVariable %_ptr_UniformConstant_16 UniformConstant
-```
-
-`albedo` is a combined image sampler at binding 0 of set 1. `normal` is a plain sampled image at binding 1 of set 1. `nearest` is a sampler at binding 0 of set 2. Those two are written to separate descriptors and combined in the shader.
-
-Here's how every type is declared and read:
-
-| Bento | Vulkan SPIR-V | OpenGL SPIR-V | GLSL | Metal |
-| --- | --- | --- | --- | --- |
-| `[texture; N]T` | `OpTypeImage` with Sampled 1, read with `OpImageFetch` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | a GLSL sampler, read with `texelFetch` | a texture with `access::read`, read with `read` |
-| `[sampled; N]T` | `OpTypeSampledImage`, read with `OpImage` and `OpImageFetch` | the same | a GLSL sampler, read with `texelFetch` | a texture with `access::sample` and a `sampler`, read with `read`, or a depth texture such as `depth2d` when it compares |
-| `[image; N]T` | `OpTypeImage` with Sampled 2, read with `OpImageRead` and written with `OpImageWrite` | the same | a GLSL image, read with `imageLoad` and written with `imageStore` | a texture with `access::read_write`, read with `read` and written with `write` |
-| `sampler` | `OpTypeSampler` | an error | an error | `sampler` |
-
-OpenGL has no such thing as a texture without a sampler. Textures are declared there as sampled images and `OpImage` extracts the image before the fetch.
-
-Sampled textures built in the shader have no variable of their own. Indexing one reads the variable of its texture and sampling one combines the texture and the sampler with `OpSampledImage`.
-
-Comparisons are the `Dref` instructions. In Vulkan samplers that compare are created with `compareEnable`.
-
-`dimensions` is `OpImageQuerySizeLod`, or `OpImageQuerySize` on storage images and multisampled textures, `levels` is `OpImageQueryLevels`, and `samples` is `OpImageQuerySamples`. All three need the `ImageQuery` capability.
-
-Multisampled textures are written `[texture; 2][array; S]T` and multisampled storage images `[image; 2][array; S]T`. Multisampled storage images need `shaderStorageImageMultisample` in Vulkan and are an error in GLSL ES.
+- With `SPV_KHR_float_controls2`, from `vulkan1.4` or with `--vk-shader-float-controls2` from `vulkan1.1`: a strict `FPFastMathDefault` for the entry point and `FPFastMathMode` on the instructions of blocks with flags. `NSZ`, `NotInf`, and `NotNaN` stay in every mask unless `--vk-signed-zero-inf-nan-preserve` says the device can preserve them.
+- Otherwise: `NoContraction` on the arithmetic of every block without `allowtransform`, and `SignedZeroInfNanPreserve` for the entry point when the device preserves them. OpenGL has only `NoContraction`.
 
 ## AIR for Metal
 
-AIR is the IR of Metal and is close to LLVM IR. Of all the APIs, Metal is the closest to the model of Shokado IR. Its address spaces match the memory spaces of Shokado IR one for one: `thread`, `threadgroup`, `device`, and `constant`. In both, stage structs are plain structs with attributes on their fields. Neither has globals. `trace` is lowered to the intersector of Metal.
+AIR is the IR of Metal and close to LLVM IR. Metal is also the API closest to Shokado IR: its address spaces match the memory spaces one for one and neither has globals. The output is a `.metallib` for `newLibraryWithData:`, with bitcode in the format of LLVM 13 that Shokado writes itself. Math flags become LLVM fast-math flags.
 
-The output is a `.metallib` you can hand straight to `newLibraryWithData:`. Shokado writes the bitcode inside it itself, in the format of LLVM 13.
-
-The fast-math flags of a block become LLVM fast-math flags on its float instructions: `nonans` as `nnan`, `noinfs` as `ninf`, `nosignedzero` as `nsz`, `allowcontract` as `contract`, `allowreassoc` as `reassoc`, and `allowtransform` as all of `reassoc`, `contract`, and `arcp`.
-
-The environment names the platform and the release it runs on, the same way `metal -target` does. The release decides the versions of AIR and Metal:
+The environment names the platform and release the way `metal -target` does:
 
 | `--env` | AIR | Metal |
 | --- | --- | --- |
@@ -302,69 +129,33 @@ The environment names the platform and the release it runs on, the same way `met
 | `macos15`, `ios18`, `tvos18`, `xros2` | 2.7 | 3.2 |
 | `macos26`, `ios26`, `tvos26`, `xros26` | 2.8 | 4.0 |
 
-For simulators, add `-simulator` to the `ios`, `tvos`, and `xros` names. For Mac Catalyst, add `-macabi` to the `ios` names.
+Simulators add `-simulator` to the `ios`, `tvos`, and `xros` names, and Mac Catalyst adds `-macabi` to the `ios` ones.
 
 ## DXIL for Direct3D 12
 
-DXIL is the IR of Direct3D 12. The container is still named DXBC, but there's no Direct3D 11 bytecode inside it, only LLVM 3.7 bitcode.
+The output is a `.dxil` container ready for `D3D12_SHADER_BYTECODE`. It passes the DXIL validator, signatures and checksum included, with no DXC or Windows SDK involved. The minimum is Shader Model 6.9 and vectors stay vectors. vkd3d-proton needs dxil-spirv at commit 139467f or later.
 
-The output is a `.dxil` ready for `D3D12_SHADER_BYTECODE`. The container Shokado writes, down to the signatures and the checksum, passes the DXIL validator. You don't need DXC or the Windows SDK to build one.
-
-The minimum is Shader Model 6.9 and Shokado doesn't scalarize vectors. vkd3d-proton needs dxil-spirv at commit 139467f or later.
-
-Storage buffers are raw buffers laid out with std430. Constant buffers are laid out with std140 and read in rows of 16 bytes with `cbufferLoadLegacy`.
-
-As in AIR, the fast-math flags of a block become LLVM fast-math flags on its float instructions: `nonans` as `nnan`, `noinfs` as `ninf`, `nosignedzero` as `nsz`, and `allowtransform` as `arcp`. LLVM 3.7 has no flag for `allowcontract` or `allowreassoc` and they're dropped.
-
-Stage inputs and outputs become elements of the input and output signatures. Compute and simdgroup built-ins are read with DXIL operations:
-
-| Bento | DXIL |
-| --- | --- |
-| `position`, `Fragment.coord` | `SV_Position` |
-| `Vertex.index`, `Vertex.instance` | `SV_VertexID` plus `StartVertexLocation`, `SV_InstanceID` plus `StartInstanceLocation` |
-| `Fragment.front_facing` | `SV_IsFrontFace` |
-| `frag_depth` | `SV_Depth` |
-| `color(n)` | `SV_Target` with index `n` |
-| `color(0, 1)` | `SV_Target1` |
-| `attribute(n)`, `location(n)` | `TEXCOORD` with index `n` |
-| `Thread.global`, `WorkGroup.id` | `threadId`, `groupId` |
-| `Thread.id`, `Thread.index` | `threadIdInGroup`, `flattenedThreadIdInGroup` |
-| `SimdGroup.lane`, `SimdGroup.size` | `waveGetLaneIndex`, `waveGetLaneCount` |
-
-Textures, images, and samplers are bound at the registers listed under [bindings](#bindings):
-
-| Bento | Direct3D 12 |
-| --- | --- |
-| `[texture; N]T` | SRV, read with `textureLoad` |
-| `[sampled; N]T` | SRV and a sampler at the same register in space 1 |
-| `[image; N]T` | UAV, read with `textureLoad` and written with `textureStore` |
-| `sampler` | sampler |
-
-`dimensions`, `levels`, and `samples` all read `getDimensions`.
+Storage buffers are raw buffers laid out with std430 and constant buffers use std140. LLVM 3.7 has no flag for `allowcontract` or `allowreassoc` and those two are dropped. `Vertex.index` and `Vertex.instance` add `StartVertexLocation` and `StartInstanceLocation` and count from the base of the draw, as in Vulkan and Metal.
 
 ## GLSL
 
-`--es` writes GLSL ES 3.10 instead of GLSL 4.50, with `GL_OES_gpu_shader5` for `precise` and `fma`. Shaders with 1D images, 64-bit integers, or reads from images without a format can't be generated as GLSL ES.
+`--es` writes GLSL ES 3.10 with `GL_OES_gpu_shader5` instead of GLSL 4.50. Shaders with 1D images, 64-bit integers, or images read without a format can't be generated as GLSL ES.
 
-GLSL has no math flags. Instead, the float results in every block without `allowtransform` are declared `precise`. Because `precise` applies to everything that feeds the value within its function, arithmetic from a block with flags that flows into strict code is strict as well. Extensions are only enabled when the shader uses them.
+GLSL has no math flags. The float results of every block without `allowtransform` are `precise` instead. `precise` reaches everything that feeds the value, and fast arithmetic that flows into strict code turns strict as well.
 
-Textures and sampled textures bound with `texture(n)` are both declared at binding `n` as the GLSL sampler type of the same form. For example, `[layer; _][texture; 2][array; 4]u32` is declared as `usampler2DMSArray` and `[sampled; 6]f32` as `samplerCube`. Textures without a sampler are only read with `texelFetch`. Samplers are an error in OpenGL. Sampled textures that compare are declared as the shadow type of the same form, such as `sampler2DShadow`. GLSL has no `texelFetch` for shadow types and indexing one is an error in OpenGL.
+GLSL reserves names starting with `gl_` or containing `__`. Shokado writes `light::shade` as `light_shade`, `gl_ray` as `glx_ray`, and `a__b` as `a_x_b`, and gives a suffix to names that clash.
 
-`dimensions` is `textureSize` on textures and sampled textures and `imageSize` on storage images. `samples` is `textureSamples` or `imageSamples` the same way. `levels` is `textureQueryLevels`. GLSL ES has no query of levels or samples.
+## VM
 
-OpenGL counts the instance from 0. `Vertex.instance` is `gl_InstanceID` plus `gl_BaseInstanceARB` from `GL_ARB_shader_draw_parameters`. OpenGL SPIR-V adds `BaseInstance` to `InstanceId` the same way.
-
-In OpenGL, and on GPUs without ray tracing hardware, ray tracing is lowered to a software traversal of a BVH in storage buffers. The BVH builders are compute kernels written in Bento itself and shipped in `std`.
-
-`light::shade` is written as `light_shade`. GLSL reserves names that start with `gl_` or contain `__`. Shokado renames them: `gl_ray` is written as `glx_ray` and `a__b` as `a_x_b`. Names that clash with GLSL or with a generated name are given a suffix.
+`--target=vm` writes a program for Shokado's own VM, the one Bento runs `const fn` calls on. `skd_vm_load` loads it and `skd_vm_call` runs any function of it with constants in and out. It's threaded code, every handler jumping straight into the next, and what's undefined on a GPU gives a defined result plus an error with a stack trace once the run ends.
 
 ## C
 
-With `--target=bto`, Shokado writes C: a function `bento_build(module, context)` that rebuilds the module through the IR builder of the library. This is a way to embed shaders in a program without any bytecode. The output doubles as an example of building IR by hand.
+`--target=bto` writes C: a function `bento_build(module, context)` that rebuilds the module through the IR builder. It embeds a shader in a program without bytecode and doubles as an example of building IR by hand.
 
 ## Generating from code
 
-Generating any target is one call with the target name. The call runs the lowering passes that target asks for, then the optimizer with the passes in `options.opt`, then the generator:
+Generating any target is one call with its name. It runs the lowering passes the target needs, the optimizer with the passes in `options.opt`, and the generator:
 
 ```c
 SKDGenOptions options = skd_gen_default_options();
@@ -374,9 +165,7 @@ options.opt = SKD_OPT_ALL;
 status = skd_gen(SKD_STRING("SPIRV"), &module, &options, &out.stream, &context);
 ```
 
-Lowering passes rewrite whatever a target has no instruction for into something it does have, such as integer dot products before SPIR-V 1.6. The result is still valid IR and the optimizer cleans up what they expand.
-
-The output can go to a buffer in memory, a file, or a custom stream.
+Lowering rewrites the module in place. Hosts generating for several targets give each one a copy from `skd_ir_module_clone`, and `skd_gen_lower` runs only the lowering. The output goes to a buffer, a file, or a stream of your own.
 </script>
 </body>
 </html>

@@ -13,86 +13,84 @@
 <script type="text/markdown">
 # Optimizer
 
-Every pass in the optimizer is built on two facts about Shokado IR. The first is that control flow is always structured. Passes see each `if` and loop directly instead of recovering them from a graph of branches the way LLVM does. The second is that every instruction is pure, convergent, or impure. Convergent instructions such as derivatives, barriers, and simdgroup operations depend on which threads run them together and are never moved or copied across control flow.
+Every pass is built on two facts about Shokado IR. Control flow is always structured, and passes see each `if` and loop directly instead of recovering them from a graph of branches the way LLVM does. And every instruction is pure, convergent, or impure. Convergent instructions such as derivatives and barriers depend on which threads run them together and never move across control flow.
 
 ## Passes
 
-mem2reg
-: Locals that are only loaded and stored whole are promoted to SSA values in one ordered walk, without the dominance frontiers LLVM's mem2reg computes.
-fold
-: Constants are folded through every operator, builtin, `extract`, `insert`, `construct`, and load of a constant global. An `if` with a known condition is replaced by the arm that runs and a loop without a `continue` or an early `break` by its body.
-algebra
-: Rewrites come from a table of rules plus a few transforms written by hand. The fast-math flags on each block decide which of them apply.
-cse
-: Instructions with the same opcode and operands as an earlier one are replaced by its result. Convergent instructions are only merged within one block. Calls are merged when the callee has no effects and reads only constant memory.
-dse, rle
-: Dead store and redundant load elimination share one walk over memory. Stores overwritten before anything reads them are removed and loads of known values are replaced by those values. What's known before an `if` is known at the start of each arm and across calls to functions without effects.
-narrow
-: Structs and arrays loaded only to read members at constant indices are replaced by loads of just those members. Loads that read almost everything stay whole.
-dce
-: Dead code is found by mark and sweep, as in LLVM's ADCE. Everything starts out dead until an effect needs it. Even values that only feed each other around a loop are removed.
 inlining
-: Every call is inlined, callees first. Bodies whose only `return` is the last statement are spliced in place of the call. Other bodies are wrapped in a loop that runs once and each `return` becomes a `break` out of it. Functions marked `inline(false)` are never inlined. Functions marked `inline(true)` are inlined even with inlining turned off.
-ifconv
-: When both arms of an `if` only compute a few values that are safe to compute either way, both arms run and `select` chooses the results.
-invert
-: Loops that test at the top become an `if` on the test around a loop that tests at the bottom. The test is copied in front of every `continue` unless it has effects or convergent instructions.
+: Calls are inlined callees first, up to a budget that grows with the module. `inline(true)` and `inline(false)` override it.
+mem2reg
+: Locals loaded and stored whole become SSA values in one ordered walk, without the dominance frontiers LLVM's mem2reg computes.
 sroa
-: Structs, and arrays that are never indexed at run time, are split into one value per leaf. Types with many leaves stay whole.
-licm and sinking
-: Pure instructions whose operands are all defined outside a loop are hoisted out of it. Out of an inverted loop, even instructions that would be unsafe to run if the loop never ran are hoisted into the `if` that guards it. Pure instructions used in only one arm are sunk into that arm.
-unrolling
-: Loops with a trip count known after folding are unrolled completely when they're under a size limit.
-loop fusion and fission
-: Neighboring loops with the same trip count are joined into one. Fission splits loops apart to ease register pressure. Neither is done across a barrier.
+: Structs and arrays never indexed at run time are split into one value per leaf.
+invert
+: Loops that test at the top become an `if` around a loop that tests at the bottom.
+fold, algebra
+: Constants fold through every operator and builtin, an `if` with a known condition becomes the arm that runs, and rewrites come from a table of rules.
+ifconv
+: Small `if`s whose arms are safe to run either way become a `select`.
+cse
+: Repeated instructions reuse the first result.
+dse, rle
+: One walk over memory removes stores nothing reads and replaces loads of known values. Members and constant indices are tracked apart: a store to `v.x` leaves what's known of `v.y` alone.
+dce
+: Mark and sweep, as in LLVM's ADCE. Even values that only feed each other around a loop are removed.
+narrow
+: Aggregates loaded only to read a few members become loads of just those members.
+licm, sinking
+: Pure instructions are hoisted out of loops and sunk into the one arm that uses them.
+unrolling, fusion, fission
+: Loops with a known trip count are unrolled under a size limit, neighbors with the same count are joined, and big ones are split to ease register pressure.
 
-The passes run in this order: inlining, mem2reg, SROA, loop inversion, fold and algebra, if-conversion, CSE, the memory walk, fold and algebra again, DCE, and finally load narrowing.
+Passes are internal to the library. Hosts run them through `skd_opt` with a set of flags.
 
 ## Algebra
 
-Exact rewrites always apply. The rest are only legal under a fast-math flag set on the block: `allowreassoc`, `allowcontract`, `allowtransform`, `nonans`, `noinfs`, or `nosignedzero`. Rules are search and replace patterns written in a small DSL of C macros:
+Exact rewrites always apply and the rest need a fast-math flag on the block. Rules are search and replace patterns in a small DSL of C macros:
 
 ```c
-RULE(OP(BAND, IF(ONCE, BNOT, A), IF(ONCE, BNOT, B)), OP(BNOT, OP(BOR, A, B)), 0)
+SKD(OP(BAND, IF(ONCE, BNOT, A), IF(ONCE, BNOT, B)), OP(BNOT, OP(BOR, A, B)), 0)
 ```
 
 This rule rewrites `~a & ~b` to `~(a | b)` when neither `~` has another use. Commutative operators match either way around.
 
 ::: pair
 ```bento before
+module algebra;
+
 import std;
 using module std;
 
-fn ident(x: i32, y: i32) -> i32 {
+export fn ident(x: i32, y: i32) -> i32 {
 	return (x + 0) * 1 + (y - y) + (x ^ x);
 }
 
-fn udiv7(x: u32) -> u32 {
+export fn udiv7(x: u32) -> u32 {
 	return x / 7;
 }
 
-fn sdiv4(x: i32) -> i32 {
+export fn sdiv4(x: i32) -> i32 {
 	return x / 4;
 }
 
-fn morgan(a: u32, b: u32) -> u32 {
+export fn morgan(a: u32, b: u32) -> u32 {
 	return ~a & ~b;
 }
 
-fn idiom(a: f32) -> f32 {
+export fn idiom(a: f32) -> f32 {
 	return sign(a) * floor(abs(a) + 0.5);
 }
 
-fn lanes(v: f32x4) -> f32x3 {
+export fn lanes(v: f32x4) -> f32x3 {
 	return v.zyx.zyx;
 }
 ```
 ```ir after
-fn @ident(i32, i32) -> i32
+fn @ident(i32, i32) -> i32 export file 0
 %bb0(%r1, %r2):
 	return %r1
 
-fn @udiv7(u32) -> u32
+fn @udiv7(u32) -> u32 export file 0
 %bb0(%r1):
 	%r5, %r6 = umule %r1, $613566757
 	%r7 = isub %r1, %r6
@@ -101,7 +99,7 @@ fn @udiv7(u32) -> u32
 	%r10 = ushr %r9, $2
 	return %r10
 
-fn @sdiv4(i32) -> i32
+fn @sdiv4(i32) -> i32 export file 0
 %bb0(%r1):
 	%r5 = ishr %r1, $31
 	%r6 = band %r5, $3
@@ -109,13 +107,13 @@ fn @sdiv4(i32) -> i32
 	%r4 = ishr %r7, $2
 	return %r4
 
-fn @morgan(u32, u32) -> u32
+fn @morgan(u32, u32) -> u32 export file 0
 %bb0(%r1, %r2):
 	%r10 = bor %r1, %r2
 	%r9 = bnot %r10
 	return %r9
 
-fn @idiom(f32) -> f32
+fn @idiom(f32) -> f32 export file 0
 %bb0(%r1):
 	%r4 = fsign %r1
 	%r11 = fmul %r4, $0x1p-1
@@ -123,7 +121,7 @@ fn @idiom(f32) -> f32
 	%r9 = ftrunc %r12
 	return %r9
 
-fn @lanes(f32x4) -> f32x3
+fn @lanes(f32x4) -> f32x3 export file 0
 %bb0(%r1):
 	%r5 = shuffle %r1, $xyz
 	return %r5
@@ -132,22 +130,18 @@ fn @lanes(f32x4) -> f32x3
 
 Division of a 32-bit integer by a constant becomes a multiply by a magic number and a shift, as in Hacker's Delight.
 
-Cases the targets leave undefined are never folded, such as a `clamp` with the low bound above the high bound, division by zero, and the `abs` of the most negative integer. Folding them would fix one answer where the hardware is free to give another.
+Cases the targets leave undefined, such as division by zero, are never folded. Folding them would fix one answer where the hardware is free to give another.
 
 With `allowcontract`, a multiply followed by an add becomes one `fma`:
 
 ```ir bento-c --math-flags=nonans,allowcontract --opt mad.bento
-fn @mad(f32, f32, f32) -> f32 export
+fn @mad(f32, f32, f32) -> f32 export file 0
 %bb0(%r1, %r2, %r3) fast(allowcontract, nonans):
 	%r12 = fma %r1, %r2, %r3
 	return %r12
 ```
 
 The flags are saved in the bytecode and every later tool preserves them.
-
-## Custom passes
-
-Passes map a module to another module the verifier accepts. The optimizer's passes and the lowering passes of the code generators share one base in `skd_ir_pass.h`: a replace table with one entry per value, a change count, and an editor for inserting instructions without disturbing the walk.
 </script>
 </body>
 </html>

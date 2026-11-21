@@ -18,11 +18,11 @@ bento-c
 bento-lsp
 : Language server for diagnostics, hover, definitions, and outlines.
 
-Linking, optimizing, and generating code are done by the [tools](toolchain.html) of Shokado.
+Linking and generating code for a target are done by the [tools](toolchain.html) of Shokado. `bento-c --help` lists its options, among them `--opt` and `--gen` to see the optimized IR or the code for one entry point, and `--steps` and `--memory` to raise the limits on code run at compile time.
 
 ## Diagnostics
 
-`bento-c` reports every error in a file in one run rather than stopping at the first. Errors read the way rustc and Swift print them: the problem first, a `note` when it needs explaining, and a `help` with the fix when there is one. Unknown names hint at the closest match or at the qualified name of an import.
+`bento-c` reports every error in a file in one run. Errors read the way rustc prints them: the problem first, a `note` when it needs explaining, and a `help` with the fix.
 
 ```bento glow.bento
 import std;

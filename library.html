@@ -20,11 +20,13 @@ Shokado and Bento build with `-nostdinc` and for WebAssembly because they depend
 SKDAllocator
 : `alloc`, `realloc`, and `free`. All three are given the alignment and the last two the old size.
 SKDRandom
-: `fill` writes the random bytes that seed the hash tables of a context. Any good source works, such as `/dev/urandom`, `getrandom`, or `BCryptGenRandom`. Fuzzers and tests that need repeatable runs can return fixed bytes.
+: `fill` writes the random bytes that seed the hash tables of a context. Tests that need repeatable runs can return fixed bytes.
 SKDFilesystem
 : `open`, `close`, `query`, `read`, `write`, and `abspath`. It's optional and only used to make source paths in diagnostics absolute.
 SKDReporter
 : `display` is called with each diagnostic as soon as it's reported.
+
+An optional `SKDClock` times each stage for profiling. Targets without unwinding of their own, such as WebAssembly, also give an `SKDExceptHandling` built on `setjmp` and `longjmp`.
 
 There's no mutable global state. All state lives in the context and in objects you own. Every file compiles without warnings as C11 and C++11 under `-Wall -Wextra -pedantic`.
 
@@ -149,13 +151,14 @@ Every stage of the compiler is public.
 | Context | `skd_context_init`, `skd_context_fini`, `skd_acquire_scratch`, `skd_release_scratch` |
 | Lexer | `bto_lex_init`, `bto_lex_next` |
 | Parser | `bto_parse_init`, `bto_parse`, `bto_ast_print`, `bto_ast_find` |
-| Checker | `bto_sema` to check and build IR, `bto_build` for a tree checked another way |
+| Checker | `bto_sema` to check a tree and build its IR |
 | IR | `skd_ir_module_init`, the builder, the editor, `skd_ir_print`, `skd_ir_strip` |
 | Bytecode | `skd_ir_image_write`, `skd_ir_image_read` |
 | Verifier | `skd_ir_verify` |
 | Linker | `skd_link` |
 | Optimizer | `skd_opt`, with passes chosen by flags |
 | Generators | `skd_gen`, which lowers, optimizes, and generates for a target by name |
+| VM | `skd_vm_load`, `skd_vm_call` |
 | Streams | memory, file, and growing buffer streams |
 
 Imports are modules in memory. To use a prebuilt module such as `std.sbc`, read the file yourself, load it with `skd_ir_image_read`, verify it, and pass it to `bto_sema` as an import. Then link the two with `skd_link` and optimize and generate as above.
@@ -174,15 +177,11 @@ Contexts are never shared between threads, but one thread can use several. ASTs 
 
 No source and no bytecode can crash the library, hang it, or exhaust its memory. That matters as soon as you compile shaders you didn't write yourself.
 
-- Parsing limits nesting and the height of trees built from long chains of operators, calls, and `else if` arms. Going past either limit is an error, not a stack overflow.
-- Every offset, length, and alignment in an image is checked before any of them is trusted.
-- No pass or generator runs on bytecode until it's been verified. Modules the compiler builds itself are trusted.
-- Every loop over input is bounded and every allocation is checked.
-- Hash tables spread their keys with SipHash-1-3 under a seed from your `SKDRandom`. Names crafted to collide only work against a known seed. Output is the same under every seed.
+- Nesting past a limit is an error, not a stack overflow.
+- Every offset, length, and alignment in an image is checked before it's trusted, and nothing runs on bytecode until it's been verified.
+- Hash tables are seeded from your `SKDRandom`. Names crafted to collide only work against a known seed.
 
-`make -C test fuzz` builds a libFuzzer harness over the lexer, parser, checker, and bytecode reader. Bytecode the verifier accepts then goes through every pass, the linker, and every generator and has to verify again at the end.
-
-Any input that crashes the library, hangs it, or slips past an out of memory report is worth up to $500 USD under the [bug bounty](bounty.html).
+Every stage that reads source or bytecode is fuzzed with libFuzzer under sanitizers. Any input that crashes the library, hangs it, or slips past an out of memory report is worth up to $500 USD under the [bug bounty](bounty.html).
 
 ## Single header
 

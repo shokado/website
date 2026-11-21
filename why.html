@@ -21,7 +21,7 @@ What's frustrating about shading languages today is how little of the GPU is act
 
 But the language is only half of the story.
 
-Bento doesn't transpile to GLSL/HLSL/MSL to have another compiler deal with it. It compiles to Shokado IR, which Shokado lowers directly to what your graphics API requires: SPIR-V for Vulkan and OpenGL, AIR for Metal, and DXIL for Direct3D 12. The bitcode for AIR and DXIL is written by Shokado itself and needs no LLVM, DXC, or Metal toolchain. The only source it emits is GLSL as a fallback for OpenGL drivers without SPIR-V support. Yet another transpiler was never the plan because that's arguably where the prior art went wrong.
+Bento doesn't transpile to GLSL/HLSL/MSL to have another compiler deal with it. It compiles to Shokado IR, which Shokado lowers directly to what your graphics API requires: SPIR-V for Vulkan and OpenGL, AIR for Metal, and DXIL for Direct3D 12. The bitcode for AIR and DXIL is written by Shokado itself and needs no LLVM, DXC, or Metal toolchain. The only shader source it emits is GLSL as a fallback for OpenGL drivers without SPIR-V support. Yet another transpiler was never the plan because that's arguably where the prior art went wrong.
 
 Shokado is built a lot like LLVM. There's an IR and a set of language-agnostic tools that work on it: a disassembler, linker, bitcode compiler, optimizer, stripper, and validator. The optimizer has way too many passes to list here, is competitive with spirv-opt, and is still being improved. The Bento language and compiler are just a small client on top of all that, much like clang is the C/C++ frontend for LLVM.
 

@@ -22,40 +22,42 @@
 - `const`, `const if`, and `const for` inside functions
 - Overloading, methods, and generic functions and structs that are checked once and exported through bytecode
 - References with a memory space, workgroup memory, and the overlap check
-- Function types and the `const fn` intrinsics `std::size_of`, `std::align_of`, and `std::count_of`
+- Function types, and `const fn`s from the same module run at compile time
 - Storage images, textures, samplers, sampling, depth comparisons, and size queries
-- [Bindless](bindless.html) in Vulkan, Direct3D 12, and OpenGL
-- Vertex, fragment, and compute entry points
+- [Bindless](bindless.html) handles in buffers everywhere but Metal, and heaps in Vulkan and Direct3D 12
+- Vertex, fragment, and compute entry points, with `kill` and `demote`
 - Uniformity qualifiers on `if` and `for`, with derivatives checked through calls and across modules
 - The built-in contexts read through `with` clauses
 - Modules, imports, exports, and `///` doc comments
 
 ### Shokado
 
-- All the tools, and the library as a single header or a static library
+- All the tools, and the libraries as a single header or static libraries
 - IR with the builder, editor, printer, and verifier
 - Bytecode that is safe on untrusted input and links with unresolved imports left for later
 - The optimizer and its table of algebraic rules
 - SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5, GLSL 4.50 and GLSL ES 3.10, and the C target
 - AIR for Metal compute, vertex, and fragment entry points from Metal 3, written as a `.metallib` without LLVM
 - DXIL from Shader Model 6.9, written as a container that passes the validator without DXC
+- The VM, with a checked mode for undefined behaviour and uninitialized reads
 - GPU tests that draw and compare every frame in OpenGL, Vulkan, and Direct3D 12
 - The language server and packages for VS Code and Sublime Text
 - The [bug bounty](bounty.html)
 
 ## Next
 
-- Uniformity analysis that proves the scope of every value and region, the `dispatch`, `partgroup`, and `quadgroup` qualifiers, and written qualifiers checked unless marked `[[assume]]`
+- Uniformity analysis, the `dispatch`, `partgroup`, and `quadgroup` qualifiers, and `[[assume]]`
 - Automatic barriers
 - Context parameters with `context` declarations and `with` blocks
 - Interfaces as generic constraints
 - Ranges as values, `in`, and `for` over the keys of a domain or enum
-- Bindless handles as one number per target
+- Untyped textures in heaps, shared heap bindings, and slots in OpenGL
 
 ## Later
 
 - [Uber shaders](uber.html)
-- `const fn` bodies, atomic types, and a layout attribute for structs
+- Generic and imported `const fn`s at compile time
+- Atomic types and a layout attribute for structs
 - Bindless in Metal
 - Simdgroup operations
 - Task and mesh stages

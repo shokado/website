@@ -20,7 +20,7 @@ skd-link
 skd-opt
 : Runs every pass of the optimizer and counts the changes each one makes.
 skd-llc
-: Generates SPIR-V, AIR, DXIL, or GLSL from a module, or C source that rebuilds the module through the library.
+: Generates SPIR-V, AIR, DXIL, or GLSL from a module, a program for the VM, or C source that rebuilds the module through the library.
 skd-dis
 : Disassembles bytecode to IR text.
 skd-val
@@ -30,11 +30,11 @@ skd-strip
 
 Bento adds its own [compiler and language server](compiler.html).
 
-Any file can be given as `-` to read from stdin or write to stdout. Every tool prints its options with `--help` and exits with 0 on success, 1 after a reported failure, and 2 for a bad command line.
+Any file can be given as `-` to read from stdin or write to stdout. Every tool lists its options with `--help`.
 
 ## Example with two modules
 
-The example has two modules. The first is a library that exports a constant and two functions:
+The first module is a library that exports a constant and two functions:
 
 ```bento tone.bento
 /// Tone mapping, shared by every post pass.
@@ -57,7 +57,7 @@ export fn aces(x: f32x3) -> f32x3 {
 }
 ```
 
-The second is a shader that imports `tone`. It has two entry points: a compute shader that grades a buffer of pixels and a fragment shader that draws in gray.
+The second is a shader that imports `tone`, with a compute entry point that grades a buffer of pixels and a fragment entry point that draws in gray.
 
 ```bento post.bento
 import std;
@@ -91,7 +91,7 @@ fn gray(fs: Input) -> Output {
 
 ### Compiling
 
-Each module is compiled on its own against the bytecode of the modules it imports. `bento-c` looks for an import as `name.sbc` in the current directory or along each `-i` path.
+Each module is compiled on its own against the bytecode of the modules it imports, found as `name.sbc` in the current directory or along each `-i` path.
 
 ```sh
 bento-c tone.bento
@@ -104,23 +104,18 @@ bento-c post.bento
 post.sbc: error: 'tone::luma' is imported and cannot be called until the module that exports it is linked
 ```
 
-### Linking
+### Linking and optimizing
 
 ```sh
 skd-link -o program.sbc post.sbc tone.sbc std.sbc
+skd-opt program.sbc -o opt.sbc
 ```
 
 The linker prefixes names with the name of their module. Structs and enums merge by qualified name and have to match.
 
-### Optimizing
-
-```sh
-skd-opt program.sbc -o opt.sbc
-```
-
 ### Generating code
 
-`--opt` runs the optimizer again after a target lowers what it has no instruction for:
+`--opt` runs the optimizer again after a target lowers what it has no instruction for, and `--env` picks where the code runs:
 
 ```sh
 skd-llc opt.sbc --opt --entry=grade -o grade.comp
@@ -143,7 +138,7 @@ skd-strip opt.sbc -o ship.sbc
 Running the same steps through pipes gives byte-identical output:
 
 ```sh
-bento-c post.bento -o - | skd-link - tone.sbc -o - | skd-opt - -o - | skd-llc - --opt --entry=gray
+bento-c post.bento -o - | skd-link - tone.sbc -o - | skd-opt - -o - | skd-llc - --opt --entry=gray -o -
 ```
 </script>
 </body>

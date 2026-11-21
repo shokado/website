@@ -15,7 +15,7 @@
 
 Bento supports Uber shaders as a first class feature all the way through its IR. In other shading languages Uber shaders are typically achieved through some combination of preprocessor macros and specialization constants. Every variant is generated as source text, and only then lexed, parsed, type checked, and compiled. In addition to being slow and wasteful, this leads to invalid and redundant variants.
 
-Bento recognizes features and builds a checked DAG that sees the nested dependencies between them, and forces you to explicitly declare every variant actually used. An Uber shader is lexed, parsed, type checked, compiled, and optimized only once. The IR is left in an incomplete state and is made concrete by instantiating it with a struct of data laid out like the features the shader declares. Once the IR is specialized, one more pass of the optimizer can run to sink those constants into the shader.
+Bento recognizes features and builds a checked DAG that sees the nested dependencies between them, and only ever builds the variants actually used. An Uber shader is lexed, parsed, type checked, compiled, and optimized only once. The IR is left in an incomplete state and is made concrete by instantiating it with a struct of data laid out like the features the shader declares. Once the IR is specialized, one more pass of the optimizer can run to sink those constants into the shader.
 
 ## Features
 

@@ -13,15 +13,10 @@
 <script type="text/markdown">
 # Getting started
 
-Shokado and Bento build with a C compiler and `make`:
+Shokado and Bento build with a C compiler and `make`, and `make install` copies the tools to the top of the tree:
 
 ```sh
 make
-```
-
-`make install` copies the tools to the top of the tree:
-
-```sh
 make install
 ```
 
@@ -31,10 +26,6 @@ To vendor the library instead, `make unified` writes it as a single header in th
 #define BENTO_IMPLEMENTATION
 #include "bento.h"
 ```
-
-::: note
-Other build options are documented in the Makefile.
-:::
 
 ## First shader
 
@@ -57,14 +48,13 @@ fn main(px: Pixel) -> Color {
 }
 ```
 
-`bento-c` compiles the shader to bytecode and `skd-llc` generates GLSL and SPIR-V from it. Each `-i` adds a directory to search for the bytecode of imports.
+`bento-c` compiles the shader to bytecode, finding `std` along `-i`, and `skd-llc` generates GLSL and SPIR-V from it.
 
 ```sh
 bento-c -i .build/debug hello.bento
 skd-llc hello.sbc -o hello.frag
 skd-llc --target=spirv hello.sbc -o hello.spv
 ```
-
 
 ## Editor support
 

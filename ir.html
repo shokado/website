@@ -15,7 +15,7 @@
 
 ## Structured control flow
 
-Control flow in Shokado IR is structured, the way SPIR-V and GLSL require it to be. LLVM IR is a control flow graph of blocks joined by branches, but Shokado IR has no control flow graph and no goto. The then and else blocks of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `kill`. Where LLVM finds loops by computing dominators, Shokado finds them by walking a tree.
+Control flow in Shokado IR is structured, the way SPIR-V and GLSL require it to be. There's no control flow graph and no goto: the arms of an `if` and the body of a `loop` belong to the instruction itself. Each block ends in exactly one jump: `yield` to continue after the `if`, `break` or `continue` for the surrounding loop, `return`, or `kill`. Where LLVM finds loops by computing dominators, Shokado finds them by walking a tree.
 
 Values aren't passed through jumps. They're merged by PHIs instead. A PHI after an `if` has one operand per arm, a PHI at the top of a loop has the entry value followed by one operand per `continue` in edge order, and a PHI after a loop has one per `break`.
 
@@ -91,17 +91,15 @@ Printed IR flattens the nesting out under labels. `%r` is a value, `%bb` a block
 
 ## Instructions and types
 
-The [IR reference](ir-reference.html) lists every instruction, type, and printed form. Arithmetic is only split into signed, unsigned, and float where the bits differ: there's one `iadd` for both kinds of integer, but `idiv` and `udiv` are separate. Builtins such as `min` and `abs` are opcodes that fold like any other instruction, not opaque calls. In SPIR-V every constant is an instruction of its own. In Shokado IR literals are operands and are in scope everywhere in a function.
+The [IR reference](ir-reference.html) lists every instruction, type, and printed form. Arithmetic is only split into signed, unsigned, and float where the bits differ: there's one `iadd` for both kinds of integer, but `idiv` and `udiv` are separate. Builtins such as `min` and `abs` are opcodes that fold like any other instruction, not opaque calls. Literals are operands rather than instructions of their own as in SPIR-V.
 
-Every opcode is pure, convergent, or impure. Passes are written against those effects rather than against opcode names. Convergent instructions, such as derivatives, barriers, and simdgroup operations, are never moved into or out of control flow.
+The IR has the same types as Bento. Fast-math flags are set once per block rather than on every instruction. Functions record the uniformity and the stages they may be called from.
 
-The IR has the same types as Bento. Fast-math flags are set once per block for the instructions directly in it. LLVM IR repeats them on every instruction. Uniformity is recorded on every `if` and loop. Functions record the scope of uniformity and the stages they may be called from.
-
-Generic functions are checked once and stored in bytecode as templates. Unlike C++ templates, their instances never fail to compile. Calls are instantiated by substitution when the module is built for local generics and in the linker for imported ones.
+Generic functions are checked once and stored in bytecode as templates. Unlike C++ templates, an instance never fails a type check, only a size limit. Calls are instantiated by substitution when the module is built for local generics and in the linker for imported ones.
 
 ## Building IR without source
 
-You don't need Bento source to make IR. Any program can build it through the public builder, much as frontends build LLVM IR through IRBuilder. Builder failures are sticky and the status is checked once at the end rather than after every call. `skd-llc --target=bto` writes a module out as C that builds it again:
+Any program can build IR through the public builder, much as frontends build LLVM IR through IRBuilder. Failures are sticky and checked once at the end. `skd-llc --target=bto` writes a module out as C that builds it again:
 
 ```c sum.c
 	f = skd_ir_function_begin(b, SKD_STRING("sum"), T[2], SKD_IR_LINKAGE_EXPORT);
@@ -130,21 +128,19 @@ You don't need Bento source to make IR. Any program can build it through the pub
 
 ## Verification
 
-Bytecode is verified before any tool uses it. The passes and generators depend on what the verifier guarantees: operands are defined before they're used, control flow and types are well formed, every call is allowed by the stages and uniformity of its callee, and every entry point's bindings are allowed by its stage.
-
-IR images are used in place with nothing copied. Loading an IR image must be verified to prevent out of bounds and type confusion. Every offset, alignment, and length is checked before it's trusted. Objects have to follow one another exactly and can never overlap.
+Bytecode is verified before any tool uses it, and the passes and generators depend on what the verifier guarantees: operands defined before use, well formed control flow and types, and calls and bindings allowed by their stages and uniformity. Images are used in place with nothing copied, and every offset, alignment, and length is checked before it's trusted.
 
 ```text skd-val
 oldver.sbc: error: not an IR image from this build of Shokado
-cut.sbc: error: the IR image is shorter than its header says
-ptr.sbc: error: the IR image is damaged: a pointer points outside it or into another object, or blocks nest too deep
+cut.sbc: error: the IR image is not as long as its header says
+ptr.sbc: error: the IR image is damaged: a pointer points outside it or into another object, or types nest too deep
 ```
 
 ## Bytecode
 
 Modules are saved to `.sbc` images as one flat block of offsets that loads back with a single read. Unlike LLVM bitcode, there's nothing to decode on the way in. The same module always saves to the same bytes.
 
-Most compilers throw their IR away once code is generated. Shokado bytecode is a delivery format instead. Imports a link leaves unresolved stay imports for a later link. Shaders compiled from source, IR built by other programs, and modules compiled offline can all be linked together. `skd-strip` removes the file table and every location without changing the generated code.
+Most compilers throw their IR away once code is generated. Shokado bytecode is a delivery format instead. Imports a link leaves unresolved stay imports for a later link, and shaders compiled from source, IR built by other programs, and modules compiled offline can all be linked together. `skd-strip` removes the file table and every location without changing the generated code.
 
 ```ir skd-dis partial.sbc
 import bits

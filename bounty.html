@@ -20,13 +20,13 @@ No `.bento` file and no `.sbc` image can crash Shokado or Bento, hang them, or r
 Issues are inputs that cause one of these:
 
 Crash
-: The process dies with a segmentation fault or another fatal signal from a stack overflow, an integer division by zero, a read or write out of bounds, or a null pointer dereference.
+: The process dies with a fatal signal, such as a segmentation fault, a stack overflow, or an integer division by zero.
 
 Denial of service
-: Running time that grows quadratically or exponentially with the size of the input, or a loop that never ends. Everything in Shokado and Bento is bounded.
+: Running time that grows quadratically or worse with the size of the input, or a loop that never ends.
 
 Out of memory
-: Failed allocations that crash the compiler or go unreported. Everything that can run out of memory is handled and reported to the host as `SKD_STATUS_OOM`.
+: Failed allocations that crash the compiler or go unreported as `SKD_STATUS_OOM`.
 
 Anything within the spirit of these rules
 : Inputs that break the safety of Shokado or Bento on untrusted input in any other way.
@@ -39,15 +39,15 @@ Inputs refused for going over a limit are the library working as designed.
 
 - Any source given to `bento-c`, the language server, or the library.
 - Any bytecode given to a tool or loaded through the library.
-- The current source, built with the default limits in `skd_config.h` and `bto_config.h` and run on a thread with at least 1 MiB of stack.
+- The current source, built with the default limits in `skd_config.h` and `bto_config.h`, run with the default options, and on a thread with at least 1 MiB of stack.
 
 ## Out of scope
 
-- Misuse of the C API, such as a bad pointer or a pass run on a module that was never verified.
+- Misuse of the C API, such as a bad pointer or a module that was never verified.
 - Host callbacks that break the contract of an allocator, a file system, or a reporter.
 - The JSON protocol of the language server and the command line arguments of the tools.
 - Output that a driver or another compiler rejects or mishandles.
-- Builds with changed limits or changed source.
+- Builds with changed limits or source, and runs with raised limits.
 
 ::: note
 Wrong code is outside the bounty but still a bug worth reporting.
@@ -60,15 +60,14 @@ There's no private channel and no embargo. Reports are public because we're sure
 - the input that sets it off,
 - the tool and its flags, or the library calls,
 - the platform, the compiler, and the build flags,
-- what happened: the signal or the sanitizer report, the time it took, or the allocation that went unreported.
+- what happened, such as the sanitizer report.
 
-Each issue pays up to $500 USD. Several inputs that hit the same bug count as one issue and pay once to whoever reported it first on the public issue tracker.
+Each issue pays up to $500 USD. Inputs that hit the same bug count as one issue and pay whoever reported it first.
 
 ## Safeguards
 
-- Everything that grows with the input has an upper limit documented in `skd_config.h` or `bto_config.h`. Pathological inputs stop at a limit with an error.
-- Algorithms are chosen to stay clear of quadratic and exponential behaviour. Where growth is still possible, it's capped.
-- Every stage is fuzzed with libFuzzer. The fuzzers and the test suite run under AddressSanitizer and UndefinedBehaviorSanitizer.
+- Everything that grows with the input has a limit, and pathological inputs stop there with an error.
+- Every stage is fuzzed with libFuzzer under AddressSanitizer and UndefinedBehaviorSanitizer.
 - Tests fail every allocation of a full build in turn and check that each failure is reported once and nothing leaks.
 </script>
 </body>

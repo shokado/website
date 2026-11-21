@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Shokado Shader Compiler Infrastructure</title>
-	<meta name="description" content="Shokado: shader compiler infrastructure. An IR, an optimizer, and code generators for SPIR-V, DXIL, AIR, and GLSL in one C library with no dependencies.">
+	<meta name="description" content="Shokado: shader compiler infrastructure. An IR, an optimizer, code generators for SPIR-V, DXIL, AIR, and GLSL, and a VM in one C library with no dependencies.">
 	<link rel="stylesheet" href="style.css">
 	<script src="site.js" defer></script>
 </head>
@@ -16,7 +16,7 @@
 <div class="hero">
 	<div class="pitch">
 	<h1>Shader compiler infrastructure.</h1>
-	<p class="lede">Shokado is everything between a shading language and your graphics API: an IR, a verifier, a linker, an optimizer, and code generators for SPIR-V, DXIL, AIR, and GLSL. The whole infrastructure is one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
+	<p class="lede">Shokado is everything between a shading language and your graphics API: an IR, a verifier, a linker, an optimizer, code generators, and a VM. It's one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
 	</div>
 	<svg class="still" viewBox="0 -24 370 320" aria-hidden="true">
 		<defs>
@@ -71,7 +71,7 @@ fn main(px: Pixel) -&gt; Color {
 	<h2>Write once, run anywhere</h2>
 	<p>Shokado generates code for SPIR-V, DXIL, AIR, and GLSL with no other compiler in between. <a href="targets.html">Targets</a></p>
 </div>
-<img class="graphic" src="targets.svg" width="1520" height="680" alt="Bento, or your own language, node graph, or material graph, builds Shokado IR. Shokado IR is lowered to SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5 to 4.6, DXIL for DirectX 12, AIR for Metal 3 and 4, and GLSL for OpenGL 4.5 to 4.6 and OpenGL ES 3.1 to 3.2 as a fallback for OpenGL drivers without SPIR-V support.">
+<img class="graphic" src="targets.svg" width="1520" height="680" alt="Bento, or your own language, node graph, or material graph, builds Shokado IR. Shokado IR is lowered to SPIR-V for Vulkan 1.0 to 1.4 and OpenGL 4.5 to 4.6, DXIL for Direct3D 12, AIR for Metal 3 and 4, and GLSL for OpenGL 4.5 to 4.6 and OpenGL ES 3.1 to 3.2 as a fallback for OpenGL drivers without SPIR-V support.">
 
 <div class="section-head" id="infrastructure">
 	<h2>Infrastructure</h2>
@@ -92,7 +92,7 @@ fn main(px: Pixel) -&gt; Color {
 	</div>
 	<div class="cell wide">
 		<h3>Optimizer</h3>
-		<p>Inlining, mem2reg, scalar replacement of aggregates, loop inversion, CSE, and comprehensive rule-driven algebraic simplifications. Competitive with <a href="https://github.com/KhronosGroup/SPIRV-Tools">spirv-opt</a> and with the highest optimization level of DXC.</p>
+		<p>Inlining, mem2reg, scalar replacement of aggregates, CSE, and rule-driven algebraic simplification. Competitive with <a href="https://github.com/KhronosGroup/SPIRV-Tools">spirv-opt</a> and with the highest optimization level of DXC.</p>
 	</div>
 	<div class="cell">
 		<h3>Library</h3>
@@ -100,7 +100,7 @@ fn main(px: Pixel) -&gt; Color {
 	</div>
 	<div class="cell full">
 		<h3>Untrusted input</h3>
-		<p>No source or bytecode can crash the library, hang it, or run it out of memory without the failure being reported and handled. An input that proves otherwise is worth up to $500 USD under the <a href="bounty.html">bug bounty</a>.</p>
+		<p>No source or bytecode can crash the library, hang it, or run it out of memory. An input that proves otherwise is worth up to $500 USD under the <a href="bounty.html">bug bounty</a>.</p>
 	</div>
 </div>
 
