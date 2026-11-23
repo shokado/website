@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Why Shokado and Bento</title>
-	<meta name="description" content="Why Shokado and Bento exist: shader compiler infrastructure that lowers straight to what your graphics API requires, and a shading language that understands the GPU.">
+	<meta name="description" content="Why Shokado and Bento exist: GPU compiler infrastructure that lowers straight to what your graphics API requires, and a language that understands the GPU.">
 	<link rel="stylesheet" href="style.css">
 	<script src="site.js" defer></script>
 </head>
@@ -13,9 +13,9 @@
 <script type="text/markdown">
 # Why Shokado and Bento
 
-The shader situation in Vulkan and Direct3D 12 is somewhat dire and Shokado and Bento are an attempt to address it. Shokado is shader compiler infrastructure for building shaders and tools. Bento is the shading language built on it.
+The shader situation in Vulkan and Direct3D 12 is somewhat dire and Shokado and Bento are an attempt to address it. Shokado is GPU compiler infrastructure for building shaders, kernels, and tools. Bento is the GPU language built on it.
 
-The Bento language is a fresh take on what a shading language could look like if we got to start over and actually learnt from past mistakes. Not just mistakes in shading languages, but in programming languages in general, such as grammars that aren't context-free or the awful mistake that is the C preprocessor.
+The Bento language is a fresh take on what a GPU language could look like if we got to start over and actually learnt from past mistakes. Not just mistakes in shading languages, but in programming languages in general, such as grammars that aren't context-free or the awful mistake that is the C preprocessor.
 
 What's frustrating about shading languages today is how little of the GPU is actually reflected in the language design. Barriers, subgroup ops, and plenty more end up as thinly typed intrinsics bolted onto an old C-derived language. Bento treats them as real concepts the language understands, without sacrificing the low-level control.
 
@@ -31,7 +31,7 @@ The IR is also flexible. Modules can be linked at runtime and IR can be left inc
 
 What's also frustrating is how much the target gets to decide what you're allowed to write. If there's no extension for something, or your driver doesn't have it, you either go without or keep a second code path around for the drivers that don't. Shokado tries to give you the superset regardless of what your target says. Where something isn't available it emits an efficient [polyfill](targets.html#polyfills) instead. Floating-point atomics turn into compare-and-swap loops on the bits, reduced within the simdgroup first and run by a single elected lane so they don't hammer memory. Clustered simdgroup operations are built out of shuffles. Some of it has no analog anywhere today. Bento has both kill and demote. Shokado just emulates whichever one your target is missing. It all makes shaders more portable and means you can start using something today without maintaining parallel code paths for it.
 
-And if the infrastructure isn't for you, just use Bento the shading language and get more creative later if you want.
+And if the infrastructure isn't for you, just use Bento the GPU language and get more creative later if you want.
 </script>
 </body>
 </html>

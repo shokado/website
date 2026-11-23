@@ -3,8 +3,8 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>Shokado Shader Compiler Infrastructure</title>
-	<meta name="description" content="Shokado: shader compiler infrastructure. An IR, an optimizer, code generators for SPIR-V, DXIL, AIR, and GLSL, and a VM in one C library with no dependencies.">
+	<title>Shokado GPU Compiler Infrastructure</title>
+	<meta name="description" content="Shokado: GPU compiler infrastructure. An IR, an optimizer, code generators for SPIR-V, DXIL, AIR, and GLSL, and a VM in one C library with no dependencies.">
 	<link rel="stylesheet" href="style.css">
 	<script src="site.js" defer></script>
 </head>
@@ -15,8 +15,8 @@
 
 <div class="hero">
 	<div class="pitch">
-	<h1>Shader compiler infrastructure.</h1>
-	<p class="lede">Shokado is everything between a shading language and your graphics API: an IR, a verifier, a linker, an optimizer, code generators, and a VM. It's one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
+	<h1>GPU compiler infrastructure.</h1>
+	<p class="lede">Shokado does for GPU languages what LLVM does for CPU ones: an IR, a verifier, a linker, an optimizer, code generators, and a VM. It's one C library without dependencies, small enough to vendor, and <a href="bounty.html">safe to run on untrusted input</a>.</p>
 	</div>
 	<svg class="still" viewBox="0 -24 370 320" aria-hidden="true">
 		<defs>
@@ -44,9 +44,9 @@
 
 <section class="band" id="bento">
 	<div class="pitch">
-		<p class="kicker">The shading language</p>
+		<p class="kicker">The GPU language</p>
 		<h2>Bento</h2>
-		<p>Bento is the shading language built on Shokado. Barriers, subgroups, uniformity, and uber shaders are concepts it understands rather than thinly typed intrinsics and macros bolted onto C.</p>
+		<p>Bento is the GPU language built on Shokado. Barriers, subgroups, uniformity, and uber shaders are concepts it understands rather than thinly typed intrinsics and macros bolted onto C.</p>
 		<p class="go"><a href="bento.html">Meet Bento</a> <a href="language.html">Language tour</a> <a href="start.html">Getting started</a></p>
 	</div>
 	<figure class="code"><pre data-lang="bento">import std;
