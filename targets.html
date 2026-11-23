@@ -41,6 +41,23 @@ Drivers have bugs too. The options with `quirk` in their names turn a lowering o
 
 `--gl-quirk-unpack-unorm4x8` is for NVIDIA's OpenGL drivers as of 615.78.08, where `unpack_unorm4x8` feeding `precise` or `NoContraction` arithmetic comes back rounded to half precision. The quirk writes the normalized packs and unpacks with shifts, masks, and a divide by 255.
 
+## Polyfills
+
+Shokado IR is a superset of the builtins in GLSL, HLSL, and MSL plus whatever their extensions add. No target has all of that. When something's missing, Shokado lowers it into operations the target does have instead of giving up on your shader. Elsewhere you'd be checking for extensions and maintaining a fallback path by hand. With Bento you just write it.
+
+There are way too many to list here, but a few of the more interesting ones:
+
+- Floating-point atomics on targets without an extension for them become compare-and-swap loops on the bits. Values are reduced within the simdgroup first and only one elected lane per address runs the loop. A hot counter would otherwise have every lane fighting over it.
+- Clustered simdgroup reductions are just shuffles.
+- Direct3D only has exclusive scans. An inclusive scan is the exclusive one plus the lane's own value. Shuffles up, down, and by xor are reads from a computed lane.
+- GLSL has no atomic loads or stores. They're an atomic or with zero and an exchange.
+- `min3`, `max3`, and `med3` have a defined result for NaN even where `AMD_shader_trinary_minmax` leaves it undefined.
+- HLSL's `msad4` and its packed byte and half dot products are available in Vulkan, OpenGL, and Metal too.
+- Most targets can only count bits, reverse them, or count leading and trailing zeros at 32 bits. Bento lets you do it on 8 and 16-bit integers too.
+- `nextafter`, `ilogb`, and `sinpi` are there even though GLSL and HLSL don't have any of them.
+
+Kill and demote below are another good example.
+
 ## Kill and demote
 
 Shokado emulates whichever one a target doesn't have:

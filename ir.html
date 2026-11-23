@@ -91,7 +91,7 @@ Printed IR flattens the nesting out under labels. `%r` is a value, `%bb` a block
 
 ## Instructions and types
 
-The [IR reference](ir-reference.html) lists every instruction, type, and printed form. Arithmetic is only split into signed, unsigned, and float where the bits differ: there's one `iadd` for both kinds of integer, but `idiv` and `udiv` are separate. Builtins such as `min` and `abs` are opcodes that fold like any other instruction, not opaque calls. Literals are operands rather than instructions of their own as in SPIR-V.
+The [IR reference](ir-reference.html) lists every instruction, type, and printed form. Arithmetic is only split into signed, unsigned, and float where the bits differ: there's one `iadd` for both kinds of integer, but `idiv` and `udiv` are separate. Builtins such as `min` and `abs` are opcodes that fold like any other instruction, not opaque calls. The instructions cover the builtins of GLSL, HLSL, and MSL together. A target missing one gets a [polyfill](targets.html#polyfills). Literals are operands rather than instructions of their own as in SPIR-V.
 
 The IR has the same types as Bento. Fast-math flags are set once per block rather than on every instruction. Functions record the uniformity and the stages they may be called from.
 

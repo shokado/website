@@ -29,6 +29,8 @@ You can use those tools from the command line today, but that's just one way in.
 
 The IR is also flexible. Modules can be linked at runtime and IR can be left incomplete, then patched and linked however you want. You can mix shaders compiled from source with generated ones or even with ones compiled offline. It's meant to be a stable, portable, and safe delivery format and not just an intermediate step you throw away.
 
+What's also frustrating is how much the target gets to decide what you're allowed to write. If there's no extension for something, or your driver doesn't have it, you either go without or keep a second code path around for the drivers that don't. Shokado tries to give you the superset regardless of what your target says. Where something isn't available it emits an efficient [polyfill](targets.html#polyfills) instead. Floating-point atomics turn into compare-and-swap loops on the bits, reduced within the simdgroup first and run by a single elected lane so they don't hammer memory. Clustered simdgroup operations are built out of shuffles. Some of it has no analog anywhere today. Bento has both kill and demote. Shokado just emulates whichever one your target is missing. It all makes shaders more portable and means you can start using something today without maintaining parallel code paths for it.
+
 And if the infrastructure isn't for you, just use Bento the shading language and get more creative later if you want.
 </script>
 </body>

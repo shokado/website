@@ -22,7 +22,7 @@
 - `const`, `const if`, and `const for` inside functions
 - Overloading, methods, and generic functions and structs that are checked once and exported through bytecode
 - References with a memory space, workgroup memory, and the overlap check
-- Function types, and `const fn`s from the same module run at compile time
+- Function types, and `const fn`s run at compile time, imported and generic ones included
 - Storage images, textures, samplers, sampling, depth comparisons, and size queries
 - [Bindless](bindless.html) handles in buffers everywhere but Metal, and heaps in Vulkan and Direct3D 12
 - Vertex, fragment, and compute entry points, with `kill` and `demote`
@@ -56,7 +56,6 @@
 ## Later
 
 - [Uber shaders](uber.html)
-- Generic and imported `const fn`s at compile time
 - Atomic types and a layout attribute for structs
 - Bindless in Metal
 - Simdgroup operations
