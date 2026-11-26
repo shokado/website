@@ -206,7 +206,7 @@ Operands of arithmetic, bitwise, and logic instructions have the type of the res
 | `ffloor a`, `ftrunc a` | Rounding down and toward zero. |
 | `fma a, b, c` | `a * b + c`. |
 | `fcanonicalize a` | `a` as a float operation would return it, left where an operation such as `-(-a)` is removed. |
-| `powi.virt a, $n` | `a` multiplied by itself `n` times, with `n` at least 0. Square matrices are multiplied as matrices. |
+| `ipowi.virt a, $n`, `fpowi.virt a, $n` | `a` multiplied by itself `n` times, with `n` at least 0. Square float matrices are multiplied as matrices. |
 | `iaddc a, b` | Two results: `a + b` and the carry as 0 or 1. |
 | `isubb a, b` | Two results: `a - b` and the borrow as 0 or 1. |
 | `imule a, b`, `umule a, b` | Two results: the low and the high half of the product at twice the width. |
@@ -299,11 +299,11 @@ A comparison gives a `b32` with the lanes of the wider operand. Enums and domain
 | `dot4addi8 a, b, c`, `dot4addu8 a, b, c` | `c` plus the dot product of the four signed or unsigned bytes of the `u32`s `a` and `b`. |
 | `fdot2add a, b, c` | `c`, an `f32`, plus the dot product of two `f16x2`. |
 | `msad r, s, c` | `c` plus the differences of the bytes of the `u32`s `r` and `s` where the byte of `r` isn't zero. |
-| `cross a, b` | Cross product of two float vectors of 3 lanes. |
-| `mmul a, b` | Matrix product of a matrix and a vector, a vector and a matrix, or two matrices. |
+| `fcross a, b` | Cross product of two float vectors of 3 lanes. |
+| `mfmul a, b` | Matrix product of a matrix and a vector, a vector and a matrix, or two matrices. |
 | `mtranspose m` | Transposed matrix. |
-| `mdeterminant m`, `minverse m` | Determinant and inverse of a square float matrix. |
-| `flength v`, `fdistance a, b` | Length of a float vector and distance between two points, as scalars. |
+| `mfdet m`, `mfinv m` | Determinant and inverse of a square float matrix. |
+| `flength v`, `fdist a, b` | Length of a float vector and distance between two points, as scalars. |
 | `fnormalize v` | `v` scaled to length 1. |
 | `ffaceforward n, i, nref` | `n` where `fdot nref, i` is negative and `-n` elsewhere. |
 | `freflect i, n` | `i` reflected about the normal `n`. |
