@@ -52,7 +52,7 @@ Structs with bindings can only appear as the parameter or result of an entry poi
 
 Booleans of every width contain only `true` and `false`. Like integers of different widths, they only meet through `as`.
 
-The short names spell a general bracketed form: `f32x3` is `[vector; 3]f32` and `f32x4x3` is `[matrix; 4][vector; 3]f32`. You only need the bracketed form when a size comes from a constant or a generic parameter.
+The short names spell a general bracketed form: `f32x3` is `[vector; 3]f32` and `f32x4x3` is `[matrix; 4][vector; 3]f32`. You only need the bracketed form when a size comes from a constant or a `const` parameter.
 
 ### Named types
 
@@ -296,7 +296,7 @@ fn tour(c: f32x4) -> f32 {
 }
 ```
 
-A parameter written `const`, as in `fn spin(at: f32x2, const turns: u32) -> f32x2`, only accepts an argument known at compile time. It's a [value parameter](#generics) written where an argument goes: each distinct argument gives `spin` an instance in which `turns` is a constant that can size an array or choose a `const if` arm.
+A parameter written `const`, as in `fn spin(at: f32x2, const turns: u32) -> f32x2`, only accepts an argument known at compile time. Each distinct argument gives `spin` an instance in which `turns` is a constant that can size an array or choose a `const if` arm. `const` parameters can be of any type, such as `f32`, an enum, or a struct.
 
 ### Function types
 
@@ -404,7 +404,7 @@ let scratch: [array; std::size_of![u64]()]f32;
 
 ## Generics
 
-Generic parameters go in brackets after the name. `T: Numeric` is a type parameter, `T: Any` admits any type, and `M: Readable` or `M: Writable` is a memory space. Values known at compile time are [`const` parameters](#functions-and-results). Writing `const N` for a length in the type of a parameter makes `N` a value parameter read from the argument.
+Generic parameters go in brackets after the name. `T: Numeric` is a type parameter, `T: Any` admits any type, and `M: Readable` or `M: Writable` is a memory space. Only types and memory spaces go in the brackets. Values known at compile time are [`const` parameters](#functions-and-results) and go in the argument list. Writing `const N` for a length in the type of a parameter binds `N` to the length of the argument.
 
 ```bento
 fn sum[T: Numeric](xs: [array; const N]T) -> T {
@@ -438,7 +438,7 @@ Bounds come in families, each in three forms: `Floating` admits `f16` and `f32`,
 
 `Any` allows only copying, passing, and returning. A bare `T` with no bound is an error.
 
-Every check that depends on a value parameter is proven once, at the definition, for every value it allows. Without `requires N >= 3` below, `N` could be 2 and `v.z` would be rejected. A `const if` narrows `N` inside its arm the same way. `10 / (N - 4)` is rejected because `N` can be 4. Nothing is reported later, when an instance is made.
+Every check that depends on a value known at compile time is proven once, at the definition, for every value it allows. Without `requires N >= 3` below, `N` could be 2 and `v.z` would be rejected. A `const if` narrows `N` inside its arm the same way. `10 / (N - 4)` is rejected because `N` can be 4. Nothing is reported later, when an instance is made.
 
 ```bento
 fn depth[T: Floating](v: [vector; const N]T) -> T requires N >= 3 {
