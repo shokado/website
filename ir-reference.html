@@ -102,7 +102,7 @@ Templates are generic functions with a body, listed after the other functions an
 | `texture n` | bound globals | Texture or sampled texture. |
 | `sampler n` | bound globals | Sampler, in Vulkan and Metal. |
 | `heap n` | bound globals | Struct in the descriptor heap, starting at the slot constant buffer `n` holds. |
-| `builtin name` | outputs | `position` of a vertex entry point or `frag_depth` of a fragment one. |
+| `builtin name` | outputs | `position`, `point_size`, `clip_distance`, `cull_distance`, or `viewport_id` of a vertex entry point, or `frag_depth` of a fragment one. Clip and cull distances are arrays of `f32`, 8 between them. |
 
 ### Context parameters
 
@@ -114,9 +114,13 @@ Context parameters are read with the `input` instruction. They're numbered apart
 | `draw_vertex_id`, `draw_instance_id` | `i32` | vertex, made by lowering where the ID leaves out the base |
 | `frag_coord` | `f32x4` | fragment |
 | `front_facing` | `b32` | fragment |
+| `point_coord` | `f32x2` | fragment |
+| `primitive_id`, `viewport_id` | `i32` | fragment |
 | `dispatch_thread_id`, `workgroup_thread_id`, `workgroup_id`, `workgroup_count` | `u32x3` | compute |
+| `workgroup_size` | `u32x3` | compute, the size the entry point declares |
 | `workgroup_thread_index`, `simdgroup_id`, `simdgroup_count` | `u32` | compute |
 | `lane_id`, `simdgroup_size` | `u32` | every stage |
+| `simdgroup_eq_mask`, `simdgroup_ge_mask`, `simdgroup_gt_mask`, `simdgroup_le_mask`, `simdgroup_lt_mask` | `u32x4` | every stage |
 
 ## Types
 

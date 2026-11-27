@@ -741,13 +741,17 @@ Entry points are declared with `[[stage(...)]]` and one of `.Vertex`, `.Fragment
 | `location(n)` | vertex output, fragment input | varying `n` |
 | `color(n)` | fragment output | color attachment `n` |
 | `color(0, 1)` | fragment output | second color of attachment 0, for [dual-source blending](#dual-source-blending) |
-| `position`, `frag_depth` | vertex output, fragment output | clip position and depth |
+| `position`, `point_size`, `viewport_id` | vertex output | clip position, point size, and viewport |
+| `clip_distance`, `cull_distance` | vertex output | arrays of up to 8 distances between them |
+| `frag_depth` | fragment output | depth |
 | `storage(n)`, `constant(n)` | input | storage and constant buffers |
 | `image(n)`, `texture(n)`, `sampler(n)` | input | images, textures and sampled textures, and samplers |
 | `scene(n)` | input | ray tracing scene |
 | `interpolate(.Smooth \| .Flat \| .NoPerspective)` | varying | interpolation, flat for integers |
 
 Every kind of resource is numbered separately from 0: `constant(0)` and `storage(0)` are two different buffers. [Bindings](targets.html#bindings) maps the numbers onto each API.
+
+Direct3D 12 draws points one pixel wide, so `point_size` does nothing there and `point_coord` is always the middle of the pixel. Metal has no cull distances. In Direct3D 12 a fragment shader can only read `viewport_id` if the vertex shader writes it.
 
 ```bento
 struct Mesh {
@@ -824,22 +828,25 @@ Contexts are declared like structs, with `context` in place of `struct`. Fields 
 
 ```bento
 export context WorkGroup {
-	[[context(12)]] count: u32x3,
-	[[context(11)]] id:    u32x3,
+	[[context(15)]] count: u32x3,
+	[[context(16)]] size:  u32x3,
+	[[context(14)]] id:    u32x3,
 	thread: struct {
-		[[context(9)]]  id:    u32x3,
-		[[context(10)]] index: u32,
+		[[context(12)]] id:    u32x3,
+		[[context(13)]] index: u32,
 	},
 }
 ```
 
 | Context | Fields | Stages |
 | --- | --- | --- |
-| `std::Dispatch` | `thread.id`, `thread.index`, `size` | compute, task, mesh |
+| `std::Dispatch` | `thread.id` | compute, task, mesh |
 | `std::WorkGroup` | `count`, `size`, `id`, `thread.id`, `thread.index` | compute, task, mesh |
-| `std::SimdGroup` | `count`, `size`, `id`, `lane`, and the lane masks | `size`, `lane`, and the masks in every stage, `id` and `count` in compute, task, and mesh |
-| `std::Vertex` | `index`, `instance`, `draw`, `view` | vertex |
-| `std::Fragment` | `coord`, `front_facing`, `view`, `primitive` | fragment |
+| `std::SimdGroup` | `count`, `size`, `id`, `lane`, and the lane masks `eq_mask`, `ge_mask`, `gt_mask`, `le_mask`, and `lt_mask` | `size`, `lane`, and the masks in every stage, `id` and `count` in compute, task, and mesh |
+| `std::Vertex` | `index`, `instance` | vertex |
+| `std::Fragment` | `coord`, `front_facing`, `point_coord`, `primitive_id`, `viewport_id` | fragment |
+
+`WorkGroup.size` is the size the entry point declares, a compile-time value.
 
 Fields without `[[context(n)]]` hold data. `with` statements supply a context to the calls that follow them in their block and pass its data fields as hidden parameters. Built-in fields only ever come from the stage. Contexts are read-only.
 
