@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>Optimizer · Shokado</title>
-	<meta name="description" content="Shokado optimizer: inlining, mem2reg, SROA, folding, rule-driven algebraic simplification, CSE, memory passes, and dead code elimination.">
+	<meta name="description" content="Shokado optimizer: inlining, mem2reg, SROA, folding, rule-driven algebraic simplification, CSE, memory passes, demanded bits, and dead code elimination.">
 	<link rel="stylesheet" href="style.css">
 	<script src="site.js" defer></script>
 </head>
@@ -33,6 +33,8 @@ cse
 : Repeated instructions reuse the first result.
 dse, rle
 : One walk over memory removes stores nothing reads and replaces loads of known values. Members and constant indices are tracked apart: a store to `v.x` leaves what's known of `v.y` alone.
+bits
+: Operations that only change bits nothing reads are dropped. `(a | b << 16) & 0xffff` becomes `a & 0xffff`, and `-x` goes when only the exponent of the result is read.
 dce
 : Mark and sweep, as in LLVM's ADCE. Even values that only feed each other around a loop are removed.
 narrow
