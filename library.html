@@ -109,7 +109,7 @@ int main(int argc, char** argv) {
 	bto_ast_init(&ast, &context);
 	skd_ir_module_init(&module, &context);
 	bto_parse_init(&parser, &ast);
-	skd_buffer_stream_init(&out, &heap);
+	skd_buffer_stream_init(&out, NULL, &heap);
 
 	SKDGenOptions options = skd_gen_default_options();
 	options.entry = SKD_STRING("main");
