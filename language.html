@@ -65,6 +65,15 @@ struct Pair { first: f32, second: f32 }
 struct Triple { ...Pair, third: f32 }
 ```
 
+Fields can have a struct written in place as their type. It's a struct of its own, named after the field, so `life` below is a `Particle.life`. Generic structs can't have one.
+
+```bento
+struct Particle {
+	at:   f32x3,
+	life: struct { start: f32, end: f32 },
+}
+```
+
 Enums are `i32` unless another integer type follows the name, as in `enum Mode : u8 { Flat = 1, Lit = 2 }`.
 
 Domains are types whose values are exactly the ones you list, as single values and ranges. `a..=b` includes `b`, `a..<b` stops before it, and `a..` has no end.
@@ -212,7 +221,7 @@ A bare `.Name` is an enumerator of whatever enum the context gives: an argument,
 ```bento
 let darker = f32x4 { ...rgb * 0.5, alpha };
 let joined = [array; 5]f32 { ...f32x2 { x, y }, ...rgb };
-let texel = cs.src[...t.global.xy];
+let texel = cs.src[...d.thread.id.xy];
 ```
 
 ## Operators
@@ -550,10 +559,10 @@ struct Sums {
 }
 
 [[stage(.Compute), workgroup_size(64)]]
-fn reduce(cs: Sums) with (t: Thread, group: WorkGroup) {
+fn reduce(cs: Sums) with (d: std::Dispatch, group: std::WorkGroup) {
 	let part: workgroup [array; 64]f32;
-	part[t.index] = cs.values[t.global.x];
-	thread if t.index == 0 {
+	part[group.thread.index] = cs.values[d.thread.id.x];
+	thread if group.thread.index == 0 {
 		let sum: f32 = 0;
 		for let i = 0; i < 64; i += 1 {
 			sum += part[i];
@@ -585,9 +594,9 @@ struct Blit {
 }
 
 [[stage(.Compute), workgroup_size(8, 8)]]
-fn swap(cs: Blit) with (t: Thread) {
-	let texel = cs.src[...t.global.xy];
-	cs.dst[...t.global.xy] = texel.bgra;
+fn swap(cs: Blit) with (d: std::Dispatch) {
+	let texel = cs.src[...d.thread.id.xy];
+	cs.dst[...d.thread.id.xy] = texel.bgra;
 }
 ```
 
@@ -657,11 +666,10 @@ Where GLSL has `sampler2DMS` and passes the sample to `texelFetch`, Bento puts t
 
 ```bento
 struct Resolve {
-	[[position]]   at:    f32x4,
 	[[texture(0)]] color: [texture; 2][array; 4]f32,
 }
 
-let at = fs.at.xy as i32x2;
+let at = frag.coord.xy as i32x2;
 let sum = f32x4 { 0, 0, 0, 0 };
 const for let i = 0; i < 4; i += 1 {
 	sum += fs.color[...at][i];
@@ -733,7 +741,7 @@ Entry points are declared with `[[stage(...)]]` and one of `.Vertex`, `.Fragment
 | `location(n)` | vertex output, fragment input | varying `n` |
 | `color(n)` | fragment output | color attachment `n` |
 | `color(0, 1)` | fragment output | second color of attachment 0, for [dual-source blending](#dual-source-blending) |
-| `position`, `frag_depth` | vertex output, fragment output | clip position and depth, and `position` as a fragment input |
+| `position`, `frag_depth` | vertex output, fragment output | clip position and depth |
 | `storage(n)`, `constant(n)` | input | storage and constant buffers |
 | `image(n)`, `texture(n)`, `sampler(n)` | input | images, textures and sampled textures, and samplers |
 | `scene(n)` | input | ray tracing scene |
@@ -749,8 +757,12 @@ struct Mesh {
 }
 
 struct Varyings {
-	[[position]]    position: f32x4,
-	[[location(0)]] uv:       f32x2,
+	[[location(0)]] uv: f32x2,
+}
+
+struct Projected {
+	[[position]] position: f32x4,
+	...Varyings,
 }
 
 struct Lit {
@@ -763,7 +775,7 @@ struct Target {
 }
 
 [[stage(.Vertex)]]
-fn project(vs: Mesh) -> Varyings {
+fn project(vs: Mesh) -> Projected {
 	return { vs.transform * vs.position.xyz1, vs.uv };
 }
 
@@ -773,7 +785,7 @@ fn paint(fs: Lit) -> Target {
 }
 ```
 
-The fragment input includes the vertex output with `...Varyings`.
+The vertex output and the fragment input share their varyings through `...Varyings`. The clip position is only a vertex output, and fragment shaders read their own coordinate from `std::Fragment`.
 
 ### Dual-source blending
 
@@ -800,47 +812,58 @@ Only `color(0)` has a second source, the one attachment Direct3D 12 and Metal ca
 In GLSL, built-in values such as the thread ID are globals like `gl_GlobalInvocationID`. In HLSL they're entry point parameters that every function needing one has to be passed by hand. In Bento a function names what it needs with `with` after the result.
 
 ```bento
-fn hash_pixel(seed: u32) -> u32 with (frag: Fragment) {
+fn hash_pixel(seed: u32) -> u32 with (frag: std::Fragment) {
 	let p = frag.coord.xy as u32x2;
 	return (p.x * 73856093) ^ (p.y * 19349663) ^ seed;
 }
 ```
 
-Callers have to provide every context a callee needs, from their own `with` clause or a `with` block around the call. Entry points have the built-ins of their stage, and each field is checked against the stages a function can be called from.
+Callers have to provide every context a callee needs, from their own `with` clause or a `with` statement before the call. Entry points have the built-ins of their stage, and each field is checked against the stages a function can be called from.
+
+Contexts are declared like structs, with `context` in place of `struct`. Fields marked `[[context(n)]]` read the built-in input `n` when they're reached through a `with` clause, whether they sit in the context or in a struct nested in it. Read any other way, they're ordinary data. The standard library declares the built-in contexts this way:
+
+```bento
+export context WorkGroup {
+	[[context(13)]] count: u32x3,
+	[[context(12)]] id:    u32x3,
+	thread: struct {
+		[[context(10)]] id:    u32x3,
+		[[context(11)]] index: u32,
+	},
+}
+```
 
 | Context | Fields | Stages |
 | --- | --- | --- |
-| `Thread` | `id`, `index`, `global` | compute, task, mesh |
-| `WorkGroup` | `id`, `size`, `count` | compute, task, mesh |
-| `SimdGroup` | `id`, `size`, `count`, `lane` | `size` and `lane` in every stage, `id` and `count` in compute, task, and mesh |
-| `Vertex` | `index`, `instance`, `draw` | vertex |
-| `Fragment` | `coord`, `front_facing` | fragment |
+| `std::Dispatch` | `thread.id`, `thread.index`, `size` | compute, task, mesh |
+| `std::WorkGroup` | `count`, `size`, `id`, `thread.id`, `thread.index` | compute, task, mesh |
+| `std::SimdGroup` | `count`, `size`, `id`, `lane`, and the lane masks | `size`, `lane`, and the masks in every stage, `id` and `count` in compute, task, and mesh |
+| `std::Vertex` | `index`, `instance`, `draw`, `view` | vertex |
+| `std::Fragment` | `coord`, `front_facing`, `view`, `primitive` | fragment |
 
-You can declare your own contexts with `context` and supply them in a `with` block to everything called inside it.
+Fields without `[[context(n)]]` hold data. `with` statements supply a context to the calls that follow them in their block and pass its data fields as hidden parameters. Built-in fields only ever come from the stage. Contexts are read-only.
 
 ```bento
-struct Camera {
+context View {
 	view:       f32x4x4,
 	projection: f32x4x4,
 }
-
-context View: Camera;
 
 fn to_clip(p: f32x3) -> f32x4 with (camera: View) {
 	return camera.projection * (camera.view * p.xyz1);
 }
 
 struct Model {
-	[[attribute(0)]] position: f32x3,
-	[[attribute(1)]] uv:       f32x2,
-	[[constant(0)]]  camera:   Camera,
+	[[attribute(0)]] position:   f32x3,
+	[[attribute(1)]] uv:         f32x2,
+	[[constant(0)]]  view:       f32x4x4,
+	[[constant(1)]]  projection: f32x4x4,
 }
 
 [[stage(.Vertex)]]
-fn project(vs: Model) -> Varyings {
-	with (View = vs.camera) {
-		return { to_clip(vs.position), vs.uv };
-	}
+fn project(vs: Model) -> Projected {
+	with View = { vs.view, vs.projection };
+	return { to_clip(vs.position), vs.uv };
 }
 ```
 
@@ -939,6 +962,8 @@ inline(true), inline(false)
 : function always or never inlined
 opcode(n)
 : function without a body standing for IR instruction `n`, the way `std` is declared
+context(n)
+: field reading built-in input `n` through a [context](#context-parameters)
 assume, assume(n)
 : unchecked promise about uniformity, covered in [uniformity](uniformity.md)
 intersect

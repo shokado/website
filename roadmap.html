@@ -27,7 +27,7 @@
 - [Bindless](bindless.html) handles in buffers everywhere but Metal, and heaps in Vulkan and Direct3D 12
 - Vertex, fragment, and compute entry points, with `kill` and `demote`
 - Uniformity qualifiers on `if` and `for`, with derivatives checked through calls and across modules
-- The built-in contexts read through `with` clauses
+- Contexts declared with `context`, the built-in ones in the standard library, read through `with` clauses
 - Modules, imports, exports, and `///` doc comments
 
 ### Shokado
@@ -48,7 +48,7 @@
 
 - Uniformity analysis, the `dispatch`, `partgroup`, and `quadgroup` qualifiers, and `[[assume]]`
 - Automatic barriers
-- Context parameters with `context` declarations and `with` blocks
+- Contexts that hold data, supplied by `with` statements, and the rest of the built-in fields
 - Interfaces as generic constraints
 - Ranges as values, `in`, and `for` over the keys of a domain or enum
 - Untyped textures in heaps, shared heap bindings, and slots in OpenGL

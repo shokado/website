@@ -69,9 +69,9 @@ struct Frame {
 }
 
 [[stage(.Compute), workgroup_size(64)]]
-fn grade(cs: Frame) with (t: Thread) {
-	let c = cs.pixels[t.global.x];
-	cs.pixels[t.global.x] = f32x4 { ...tone::aces(c.rgb * cs.exposure), c.a };
+fn grade(cs: Frame) with (d: std::Dispatch) {
+	let c = cs.pixels[d.thread.id.x];
+	cs.pixels[d.thread.id.x] = f32x4 { ...tone::aces(c.rgb * cs.exposure), c.a };
 }
 
 struct Input {

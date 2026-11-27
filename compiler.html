@@ -40,11 +40,11 @@ struct Frame {
 }
 
 [[stage(.Compute), workgroup_size(64)]]
-fn glow(cs: Frame) with (t: Thread) {
-	let level = std::sqrt(cs.pixels[t.global.x]);
+fn glow(cs: Frame) with (d: std::Dispatch) {
+	let level = std::sqrt(cs.pixels[d.thread.id.x]);
 	let tint = std::normalise(f32x3 { level, level, 1.0 });
 	brighten(level);
-	brighten(&cs.pixels[t.global.x]);
+	brighten(&cs.pixels[d.thread.id.x]);
 }
 ```
 
