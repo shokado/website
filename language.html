@@ -820,15 +820,15 @@ fn hash_pixel(seed: u32) -> u32 with (frag: std::Fragment) {
 
 Callers have to provide every context a callee needs, from their own `with` clause or a `with` statement before the call. Entry points have the built-ins of their stage, and each field is checked against the stages a function can be called from.
 
-Contexts are declared like structs, with `context` in place of `struct`. Fields marked `[[context(n)]]` read the built-in input `n` when they're reached through a `with` clause, whether they sit in the context or in a struct nested in it. Read any other way, they're ordinary data. The standard library declares the built-in contexts this way:
+Contexts are declared like structs, with `context` in place of `struct`. Fields marked `[[context(n)]]` stand for the built-in input `n` when read through a `with` clause, whether they sit in the context or in a struct nested in it. Read any other way, they're ordinary data. The standard library declares the built-in contexts this way:
 
 ```bento
 export context WorkGroup {
-	[[context(13)]] count: u32x3,
-	[[context(12)]] id:    u32x3,
+	[[context(12)]] count: u32x3,
+	[[context(11)]] id:    u32x3,
 	thread: struct {
-		[[context(10)]] id:    u32x3,
-		[[context(11)]] index: u32,
+		[[context(9)]]  id:    u32x3,
+		[[context(10)]] index: u32,
 	},
 }
 ```

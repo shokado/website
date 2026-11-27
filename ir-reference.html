@@ -104,19 +104,19 @@ Templates are generic functions with a body, listed after the other functions an
 | `heap n` | bound globals | Struct in the descriptor heap, starting at the slot constant buffer `n` holds. |
 | `builtin name` | outputs | `position` of a vertex entry point or `frag_depth` of a fragment one. |
 
-### Builtins
+### Context parameters
 
-Builtins are read with the `input` instruction.
+Context parameters are read with the `input` instruction. They're numbered apart from the builtins that outputs bind.
 
-| Builtin | Type | Stages |
+| Context parameter | Type | Stages |
 | --- | --- | --- |
-| `position` | `f32x4` | fragment |
-| `vertex_index`, `instance_index` | `i32` | vertex |
-| `vertex_id`, `instance_id`, `base_vertex`, `base_instance` | `i32` | vertex, made by lowering where the index leaves out the base |
+| `vertex_id`, `instance_id`, `base_vertex`, `base_instance` | `i32` | vertex |
+| `draw_vertex_id`, `draw_instance_id` | `i32` | vertex, made by lowering where the ID leaves out the base |
+| `frag_coord` | `f32x4` | fragment |
 | `front_facing` | `b32` | fragment |
-| `global_invocation_id`, `local_invocation_id`, `workgroup_id`, `num_workgroups` | `u32x3` | compute |
-| `local_invocation_index`, `simdgroup_id`, `simdgroup_count` | `u32` | compute |
-| `simdgroup_lane`, `simdgroup_size` | `u32` | every stage |
+| `dispatch_thread_id`, `workgroup_thread_id`, `workgroup_id`, `workgroup_count` | `u32x3` | compute |
+| `workgroup_thread_index`, `simdgroup_id`, `simdgroup_count` | `u32` | compute |
+| `lane_id`, `simdgroup_size` | `u32` | every stage |
 
 ## Types
 
