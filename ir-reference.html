@@ -208,7 +208,7 @@ Operands of arithmetic, bitwise, and logic instructions have the type of the res
 | `iabs a`, `fabs a` | Absolute value. |
 | `fsign a` | `-1.0`, `0.0`, or `1.0` by the sign of `a`. |
 | `ffloor a`, `ftrunc a` | Rounding down and toward zero. |
-| `fma a, b, c` | `a * b + c`. |
+| `fma a, b, c` | `a * b + c`, rounded once or twice as the target chooses. |
 | `fcanonicalize a` | `a` as a float operation would return it, left where an operation such as `-(-a)` is removed. |
 | `ipowi.virt a, $n`, `fpowi.virt a, $n` | `a` multiplied by itself `n` times, with `n` at least 0. Square float matrices are multiplied as matrices. |
 | `iaddc a, b` | Two results: `a + b` and the carry as 0 or 1. |

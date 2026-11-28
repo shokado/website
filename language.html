@@ -822,7 +822,7 @@ fn hash_pixel(seed: u32) -> u32 with (frag: std::Fragment) {
 }
 ```
 
-Callers have to provide every context a callee needs, from their own `with` clause or a `with` statement before the call. Entry points have the built-ins of their stage, and each field is checked against the stages a function can be called from.
+Callers have to pass every context a callee needs, from their own `with` clause or a `with` statement before the call. Entry points have the built-ins of their stage, and each field is checked against the stages a function can be called from.
 
 Contexts are declared like structs, with `context` in place of `struct`. Fields marked `[[context(n)]]` stand for the built-in input `n` when read through a `with` clause, whether they sit in the context or in a struct nested in it. Read any other way, they're ordinary data. The standard library declares the built-in contexts this way:
 
@@ -848,7 +848,7 @@ export context WorkGroup {
 
 `WorkGroup.size` is the size the entry point declares, a compile-time value.
 
-Fields without `[[context(n)]]` hold data. `with` statements supply a context to the calls that follow them in their block and pass its data fields as hidden parameters. Built-in fields only ever come from the stage. Contexts are read-only.
+A field marked `[[context(n)]]` works like a static member in C++. It takes no space, and reading it from any value of the struct reads the built-in, so any struct can list built-ins next to its data. A context in a `with` clause is a parameter like any other, passed for you: each call gets the innermost `with` statement or clause of that context in scope. Built-in fields only ever come from the stage. Contexts are read-only.
 
 ```bento
 context View {

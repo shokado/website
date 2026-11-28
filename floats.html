@@ -23,6 +23,8 @@ Bento code follows IEEE 754 unless it says otherwise. A multiply and an add are 
 
 Where the targets disagree, Bento picks one answer. `round` rounds halves to even, as `roundEven` does in GLSL and `rint` in Metal: `round(2.5)` is `2.0` and `round(3.5)` is `4.0`. `min`, `max`, and `clamp` follow `minNum` and `maxNum` of IEEE 754-2008, where a NaN loses to a number: `min(x, NaN)` is `x`. `min3` and `max3` do the same. Either zero can come back from `min(-0.0, 0.0)`.
 
+`fma` is the one place Bento leaves the answer to the target: `fma(a, b, c)` is `a * b + c` rounded once or twice. Metal always fuses it, Direct3D 12 has no fused `fma` for `f32`, and Vulkan and OpenGL leave the choice to the driver.
+
 ## Math flags
 
 The `math` attribute loosens the rules for one function or block:
